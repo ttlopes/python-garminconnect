@@ -11,7 +11,7 @@ page.
 
 ### Added
 
-- **Upload consent can be checked**: new `get_consent_feature(feature_type)` reads one of the account's consent records (`GET /gdprconsent-service/feature/{featureType}`), `get_upload_consent()` reads the `UPLOAD` record, and `has_upload_consent()` returns True only when its `userOption` is `opt-in`. On EU accounts Garmin enforces upload consent, which the account owner grants in Garmin Connect.
+- **Upload consent can be checked**: new `get_consent_feature(feature_type)` reads one of the account's consent records (`GET /gdprconsent-service/feature/{featureType}`), `get_upload_consent()` reads the `UPLOAD` record, and `has_upload_consent()` returns True only when its `userOption` is `opt-in`. Garmin Connect asks the account owner to agree to this before it stores uploaded data; it was seen on both EU and US accounts.
 - **Upload consent can be granted or declined**: `get_consent_text(consent_type_id="DI_CONNECT_UPLOAD", locale="en-US")` reads the consent text and its current `version` (`GET https://connect.garmin.com/consentTextServices/consentText`). `grant_upload_consent()` sends what the web app's "Agree" sends (`POST /gdprconsent-service/consent/grant`), and `decline_upload_consent()` sends what "Do Not Agree" sends (`POST /gdprconsent-service/consent/revoke/DI_CONNECT_UPLOAD/false`), which keeps the account's data; uploads may be refused until consent is granted again. Both read the current version from the consent text unless `consent_version` is given, and neither changes the device upload preference.
 
 ## [0.3.20] - 2026-10-23
