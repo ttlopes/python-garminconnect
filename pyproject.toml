@@ -213,6 +213,10 @@ unfixable = []  # Allow all fixes, including unsafe ones
 "scripts/*" = ["T20", "D103"]  # Maintainer CLI utilities - printing is intentional
 "tests/test_token_permissions.py" = ["S105"]  # synthetic token literals in fixtures
 
+[tool.codespell]
+# Exercise keys and labels in garminconnect/exercises.py (Garmin data).
+ignore-words-list = "childs,delt,heros"
+
 [tool.coverage.run]
 source = ["garminconnect"]
 omit = [

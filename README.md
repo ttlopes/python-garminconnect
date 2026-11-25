@@ -906,7 +906,7 @@ stroke, rest, and pool settings are configured separately.
 
 **Available workout classes:** `RunningWorkout`, `CyclingWorkout`, `SwimmingWorkout`, `StrengthWorkout`, `MultiSportWorkout`, `FitnessEquipmentWorkout`. Garmin has no walking or hiking workout sport type, so `upload_walking_workout()` and `upload_hiking_workout()` raise `ValueError`; the sport types Garmin accepts are listed by `get_workout_types()["workoutSportTypes"]`.
 
-**Strength workouts** are usually rep-based. Build each exercise with `create_strength_set(category, step_order, sets, reps, rest_seconds, exercise_name="", weight_kg=None, description=None)` and identify exercises with a `category` / `exercise` pair from the bundled catalog in `garminconnect.exercises` (1,527 exercises across 47 categories, with `resolve(name)` and `find(term)` helpers):
+**Strength workouts** are usually rep-based. Build each exercise with `create_strength_set(category, step_order, sets, reps, rest_seconds, exercise_name="", weight_kg=None, description=None)` and identify exercises with a `category` / `exercise` pair from the bundled catalog in `garminconnect.exercises` (1,830 exercises verified against Garmin plus category-only entries, across 53 categories, with `resolve(name)` and `find(term)` helpers):
 
 ```python
 from garminconnect import exercises

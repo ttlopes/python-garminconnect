@@ -7,6 +7,16 @@ Numbers in parentheses refer to GitHub issues and pull requests. Releases before
 0.3.10 are described on the [GitHub Releases](https://github.com/cyberjunky/python-garminconnect/releases)
 page.
 
+## [Unreleased]
+
+### Changed
+
+- **The strength-exercise catalog now has 1,830 exercises in 53 categories, each verified against Garmin**: every name was uploaded in a strength workout on a test account and kept only if Garmin stored it unchanged. New are, among others, yoga poses (`POSE`), pilates and mobility moves (`MOVE`), `INDOOR_ROW`, `STRETCH` and `UNKNOWN`. Each category also has a category-only entry (`exercise: ""`), so the old generic names such as `resolve("Cardio")` keep working. `Barbell Shoulder Press` (`SHOULDER_PRESS`/`BARBELL_SHOULDER_PRESS`) was removed: Garmin stores that name as empty.
+
+### Development
+
+- **The strength-exercise catalog can be refreshed without copying HTML from the browser**: `scripts/generate_exercises.py --fetch` downloads the exercise translations Garmin Connect publishes without a login and lists every candidate category and exercise name. `--verify --tokens PATH --i-understand-this-writes` then checks each candidate against Garmin and writes `garminconnect/exercises.py`: Garmin rejects an unknown category with HTTP 400 but silently blanks an unknown exercise name, so each category is uploaded alone in a temporary strength workout, the names are uploaded in batches of 50, and a name is kept only if it reads back unchanged. Every temporary workout is deleted again, even when the run fails, and `--cache` lets an interrupted run resume; `--from-cache` writes the catalog again from that cache without logging in or uploading anything. Because it creates and deletes many workouts, use a throwaway test account. `--metadata DIR` adds muscles and equipment from the web app's `Exercises.json` / `exerciseToEquipments.json`, saved from the browser. A catalog generated this way gives each entry `display_name`, `primary_muscles`, `secondary_muscles` and `equipment` (empty lists when unknown), adds `by_muscle()`, `by_equipment()` and `EQUIPMENT_NAMES`, and keeps the existing names, `EXERCISES`, `BY_NAME`, `CATEGORIES`, `resolve()` and `find()` working. Every accepted category also gets one category-only entry with `exercise` `""`; these replace the old generic entries such as `("Cardio", "CARDIO", "CARDIO")`, because Garmin stores a generic name as an empty name anyway, so a workout built from them behaves the same on Garmin, and `resolve()` of the old names (e.g. `resolve("Cardio")`) keeps working. The picker-HTML mode still works.
+
 ## [0.3.20] - 2026-10-23
 
 ### Added
