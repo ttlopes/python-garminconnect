@@ -203,6 +203,7 @@ feature get a 404.
 | `get_activity_rounds(activity_id)` | `GET /activity-service/activity/{id}/rounds` | HIIT/boxing rounds with sets. | yes (empty) |
 | `get_activity_step_details(activity_id)` | `GET /activity-service/activity/{id}/stepdetails` | Structured-workout steps. | yes (empty) |
 | `get_activity_jump_details(activity_id)` | `GET /activity-service/activity/{id}/jumpDetails` | | yes (empty) |
+| `get_activity_workouts(activity_id)` | `GET /activity-service/activity/{id}/workouts` | The workouts linked to the activity. Garmin only links a workout when a watch syncs an activity recorded from it, so manual activities and FIT uploads (even one with workout messages, uploaded on a day that workout is scheduled) return `[]`. 404 for an unknown activity id. | yes (empty) |
 | `get_activity_subsecond_details(activity_id, maxchart=2000)` | `GET /activity-service/activity/{id}/subseconddetails?maxChartSize` | Only when `metadataDTO.hasSubsecondData`. | yes (empty) |
 | `get_activity_swim_details(activity_id, maxchart=2000, maxpoly=4000)` | `GET /activity-service/activity/{id}/swimDetails?maxChartSize&maxPolylineSize` | Pool swims use this instead of `/details`. | yes (empty) |
 | `get_activity_map_details(activity_id, maxpoly=4000, max_heat_map=4000)` | `GET /activity-service/activity/{id}/mapdetails?maxPolylineSize&maxHeatMapSize` | Polyline + heat map without charts. | yes |
@@ -251,6 +252,7 @@ feature get a 404.
 | `get_workout_sport_types()` | `GET /workout-service/workouts/sport-types` | | yes |
 | `get_workout_types()` | `GET /workout-service/workout/types` | Source of the ids in `garminconnect.workout`. | yes |
 | `get_strength_benchmarks()` | `GET /workout-service/benchmarks` | | yes |
+| `get_adaptive_workout(workout_id)` | `GET /workout-service/fbt-adaptive/{workoutId}` | One workout from an adaptive Garmin Coach plan (the plan itself: `get_adaptive_training_plan_by_id`). 404 for an unknown id. The test account was not offered adaptive plans (a catalogue search for `FBT_ADAPTIVE` returned none), so no real reply was seen. | no |
 | `copy_workout(workout_id, name)` | `POST /workout-service/workout/copy/{workoutId}` (text/plain name) | Returns the new workout with its `workoutId`. | yes |
 | `reschedule_workout(scheduled_workout_id, cdate)` | `PUT /workout-service/schedule/{scheduleId}` | Existing entry + `calendarDate`. | yes |
 | `send_scheduled_workouts_to_devices()` | `PUT /workout-service/schedule/sendtodevices` | | no |

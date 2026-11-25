@@ -85,6 +85,18 @@ class WorkoutsMixin(GarminBase):
         url = f"{self.garmin_workouts}/workout/{workout_id}"
         return self.connectapi(url)
 
+    def get_adaptive_workout(self, workout_id: int | str) -> dict[str, Any]:
+        """Return one workout from an adaptive Garmin Coach training plan.
+
+        GET /workout-service/fbt-adaptive/{workoutId}. Not verified against a
+        live account with an adaptive plan.
+        """
+        workout_id = _coerce_positive_id(workout_id, "workout_id")
+        url = f"{self.garmin_workouts}/fbt-adaptive/{workout_id}"
+
+        logger.debug("Requesting adaptive workout details for %s", workout_id)
+        return self.connectapi(url)
+
     def delete_workout(self, workout_id: int | str) -> Any:
         """Delete a workout template from the workout library."""
         workout_id = _coerce_positive_id(workout_id, "workout_id")

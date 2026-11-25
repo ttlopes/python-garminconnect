@@ -7,6 +7,12 @@ Numbers in parentheses refer to GitHub issues and pull requests. Releases before
 0.3.10 are described on the [GitHub Releases](https://github.com/cyberjunky/python-garminconnect/releases)
 page.
 
+## [Unreleased]
+
+### Added
+
+- **Workouts linked to an activity and adaptive Garmin Coach workouts can be read**: new `get_activity_workouts(activity_id)` returns the workouts linked to an activity (`GET /activity-service/activity/{activityId}/workouts`). Garmin only links a workout when a watch syncs an activity recorded from it, so manual activities and uploaded FIT files return an empty list. New `get_adaptive_workout(workout_id)` returns one workout from an adaptive Garmin Coach plan (`GET /workout-service/fbt-adaptive/{workoutId}`), next to the existing `get_adaptive_training_plan_by_id()`; it was not verified against an account with an adaptive plan. Both raise `GarminConnectNotFoundError` for an unknown id.
+
 ## [0.3.20] - 2026-10-23
 
 ### Added

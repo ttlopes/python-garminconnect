@@ -789,6 +789,15 @@ class ActivitiesMixin(GarminBase):
         """
         return self._activity_subresource(activity_id, "stepdetails")
 
+    def get_activity_workouts(self, activity_id: int | str) -> list[dict[str, Any]]:
+        """Return the workouts linked to an activity (empty when none is linked).
+
+        GET /activity-service/activity/{activityId}/workouts. Garmin links a
+        workout when a watch syncs an activity recorded from it; manual
+        activities and synthetic FIT uploads returned an empty list in testing.
+        """
+        return self._activity_subresource(activity_id, "workouts")
+
     def get_activity_jump_details(self, activity_id: int | str) -> list[dict[str, Any]]:
         """Return jump data (jump rope and similar; empty when ``jumpCount`` is 0).
 

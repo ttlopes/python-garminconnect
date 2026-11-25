@@ -2528,6 +2528,56 @@ class TestHttpErrorMapping:
 
 
 # ---------------------------------------------------------------------------
+# Workouts linked to an activity and adaptive Garmin Coach workouts
+# ---------------------------------------------------------------------------
+
+_WORKOUT_READS = [
+    ("get_activity_workouts", "/activity-service/activity/42/workouts"),
+    ("get_adaptive_workout", "/workout-service/fbt-adaptive/42"),
+]
+
+
+class TestWorkoutReads:
+    @pytest.mark.parametrize(("method", "path"), _WORKOUT_READS)
+    @pytest.mark.parametrize("given_id", [42, "42", 42.0])
+    def test_requests_url(
+        self, garmin: garminconnect.Garmin, method: str, path: str, given_id: Any
+    ):
+        with patch.object(garmin, "connectapi", return_value=[]) as api:
+            getattr(garmin, method)(given_id)
+        api.assert_called_once_with(path)
+
+    @pytest.mark.parametrize(("method", "path"), _WORKOUT_READS)
+    def test_list_reply_passed_through(
+        self, garmin: garminconnect.Garmin, method: str, path: str
+    ):
+        reply = [{"workoutId": 1}, {"workoutId": 2}]
+        with patch.object(garmin, "connectapi", return_value=reply):
+            assert getattr(garmin, method)(42) == reply
+
+    @pytest.mark.parametrize(("method", "path"), _WORKOUT_READS)
+    @pytest.mark.parametrize("bad_id", [1.9, "abc", "", None, True, 0, -5])
+    def test_rejects_bad_id_without_request(
+        self, garmin: garminconnect.Garmin, method: str, path: str, bad_id: Any
+    ):
+        with (
+            patch.object(garmin, "connectapi") as api,
+            pytest.raises(ValueError, match="_id must be"),
+        ):
+            getattr(garmin, method)(bad_id)
+        api.assert_not_called()
+
+    @pytest.mark.parametrize(("method", "path"), _WORKOUT_READS)
+    def test_404_raises_not_found(self, monkeypatch, method: str, path: str):
+        g = garminconnect.Garmin()
+        resp = _FakeResp(404, {"error": "NotFoundException"})
+        monkeypatch.setattr(g.client, "get_api_headers", dict)
+        monkeypatch.setattr(g.client._api_session, "request", lambda *a, **k: resp)
+        monkeypatch.setattr(type(g.client), "is_authenticated", False)
+        with pytest.raises(garminconnect.GarminConnectNotFoundError):
+            getattr(g, method)(42)
+
+# ---------------------------------------------------------------------------
 # _run_request: 401 retry must rewind file bodies and keep custom headers
 # ---------------------------------------------------------------------------
 

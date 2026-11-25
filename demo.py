@@ -961,6 +961,10 @@ menu_categories = {
                 "desc": "Add a calendar note for today (interactive)",
                 "key": "calendar_note",
             },
+            "n": {
+                "desc": "Get adaptive Garmin Coach workout by ID",
+                "key": "get_adaptive_workout",
+            },
         },
     },
     "c": {
@@ -1029,6 +1033,10 @@ menu_categories = {
             "c": {
                 "desc": "Convert latest activity to a course (not saved)",
                 "key": "convert_activity_to_course",
+            },
+            "d": {
+                "desc": "Workouts linked to latest activity",
+                "key": "get_activity_workouts",
             },
         },
     },
@@ -3326,6 +3334,25 @@ def get_scheduled_workout_by_id_data(api: Garmin) -> None:
         )
     except Exception as e:
         print(f"❌ Error getting scheduled workout by ID: {e}")
+
+
+def get_adaptive_workout_data(api: Garmin) -> None:
+    """Get a workout from an adaptive Garmin Coach plan by ID."""
+    try:
+        workout_id = input("Enter adaptive workout ID: ").strip()
+
+        if not workout_id:
+            print("❌ Adaptive workout ID is required")
+            return
+
+        call_and_display(
+            api.get_adaptive_workout,
+            workout_id,
+            method_name="get_adaptive_workout",
+            api_call_desc=f"api.get_adaptive_workout({workout_id})",
+        )
+    except Exception as e:
+        print(f"❌ Error getting adaptive workout by ID: {e}")
 
 
 def delete_workout_data(api: Garmin) -> None:
@@ -5718,6 +5745,7 @@ def execute_api_call(api: Garmin, key: str) -> None:
             "get_scheduled_workout_by_id": lambda: get_scheduled_workout_by_id_data(
                 api
             ),
+            "get_adaptive_workout": lambda: get_adaptive_workout_data(api),
             "get_scheduled_workouts": lambda: get_scheduled_workouts(api),
             "scheduled_workout": lambda: schedule_workout_data(api),
             "delete_workout": lambda: delete_workout_data(api),
@@ -6200,6 +6228,9 @@ def execute_api_call(api: Garmin, key: str) -> None:
             "get_favorite_activities": _web(api, "get_favorite_activities"),
             "get_activity_laps": _web(
                 api, "get_activity_laps", lambda: (_latest_activity_id(api),)
+            ),
+            "get_activity_workouts": _web(
+                api, "get_activity_workouts", lambda: (_latest_activity_id(api),)
             ),
             "get_activity_map_details": _web(
                 api, "get_activity_map_details", lambda: (_latest_activity_id(api),)

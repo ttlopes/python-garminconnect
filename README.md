@@ -11,7 +11,7 @@
 The Garmin Connect API library comes with two examples:
 
 - **`example.py`** - Simple getting-started example showing authentication, token storage, and basic API calls
-- **`demo.py`** - Comprehensive demo providing access to **270 API methods** organized into **15 categories** for easy navigation
+- **`demo.py`** - Comprehensive demo providing access to **272 API methods** organized into **15 categories** for easy navigation
 
 ```bash
 $ ./demo.py
@@ -51,7 +51,7 @@ Make your selection:
 
 ## API Coverage Statistics
 
-- **Total API Methods**: 348 methods; every method with a one-line description is listed in the [Method Reference](#-method-reference)
+- **Total API Methods**: 350 methods; every method with a one-line description is listed in the [Method Reference](#-method-reference)
 - **Categories**: 15 organized sections
 - **Web-app endpoint map**: the endpoints the Garmin Connect web app uses documented with the exact request it sends and whether it was verified live, in [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md); the dashboard's GraphQL operations are in [docs/graphql_operations.md](docs/graphql_operations.md)
 - **User & Profile**: 8 methods (basic user info, settings)
@@ -65,10 +65,10 @@ Make your selection:
 - **Gear & Equipment**: 13 methods (gear management, tracking, creation)
 - **Hydration & Wellness**: 30 methods (hydration, nutrition, blood pressure, menstrual reads and writes, Jet Lag Adviser trips)
 - **System & Export**: 5 methods (reporting, logout, GraphQL, health snapshot download)
-- **Training Plans & Calendar**: 23 methods (calendar weeks/years/events, upcoming and primary race events, active plans and plan tasks, plans, plan by ID, typed strength workout uploads including timed sets, exercise catalog search, in-place workout editing, push to device, workout scheduling management)
+- **Training Plans & Calendar**: 24 methods (calendar weeks/years/events, upcoming and primary race events, active plans and plan tasks, plans, plan by ID, adaptive Garmin Coach workout by ID, typed strength workout uploads including timed sets, exercise catalog search, in-place workout editing, push to device, workout scheduling management)
 - **Golf**: 5 methods (scorecard summary, scorecard detail, shot data, club stats, user stats)
 - **Activity Editing**: 3 methods (set activity description, set strength-activity exercise sets)
-- **Activity Details & Courses**: 13 methods (laps, rounds, step/jump/swim details, map and polyline, activity search, courses)
+- **Activity Details & Courses**: 14 methods (laps, rounds, step/jump/swim details, linked workouts, map and polyline, activity search, courses)
 
 ### Interactive Features
 
@@ -131,13 +131,13 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e ".[example]"
 
 python3 ./example.py   # simple getting-started example
-python3 ./demo.py      # comprehensive demo (270 API methods)
+python3 ./demo.py      # comprehensive demo (272 API methods)
 ```
 
 ## 📚 Method Reference
 
 <!-- METHODS:START -->
-348 public methods on `Garmin`, generated from the code by `scripts/gen_method_reference.py`. Click a section to expand it.
+350 public methods on `Garmin`, generated from the code by `scripts/gen_method_reference.py`. Click a section to expand it.
 
 <details><summary><b>Login, profile & account</b> (21)</summary>
 
@@ -331,7 +331,7 @@ python3 ./demo.py      # comprehensive demo (270 API methods)
 
 </details>
 
-<details><summary><b>Activities</b> (46)</summary>
+<details><summary><b>Activities</b> (47)</summary>
 
 | Method | Description |
 | --- | --- |
@@ -364,6 +364,7 @@ python3 ./demo.py      # comprehensive demo (270 API methods)
 | `get_activity_typed_splits(activity_id)` | Return typed activity splits. |
 | `get_activity_types()` | Return all activity types and their parent types. |
 | `get_activity_weather(activity_id)` | Return activity weather. |
+| `get_activity_workouts(activity_id)` | Return the workouts linked to an activity (empty when none is linked). |
 | `get_adjacent_activities(activity_id)` | Return the ids of the previous and next activity (`None` when absent). |
 | `get_available_metrics(start, end, activity_types=None)` | Return which progress-summary metrics have data per activity type. |
 | `get_fastest_splits(start, end, activity_type='running', number_of_bests=10)` | Return the fastest splits (best times per distance) in a date range. |
@@ -384,13 +385,14 @@ python3 ./demo.py      # comprehensive demo (270 API methods)
 
 </details>
 
-<details><summary><b>Workouts</b> (24)</summary>
+<details><summary><b>Workouts</b> (25)</summary>
 
 | Method | Description |
 | --- | --- |
 | `copy_workout(workout_id, name)` | Duplicate a workout under a new name and return the copy. |
 | `delete_workout(workout_id)` | Delete a workout template from the workout library. |
 | `download_workout(workout_id)` | Download a workout as a FIT file. |
+| `get_adaptive_workout(workout_id)` | Return one workout from an adaptive Garmin Coach training plan. |
 | `get_next_scheduled_workout()` | Return the earliest upcoming scheduled workout (today or later). |
 | `get_scheduled_workout_by_id(scheduled_workout_id)` | Return one scheduled workout. |
 | `get_scheduled_workouts(year, month)` | Return the scheduled workouts of a calendar month. |
@@ -1042,7 +1044,7 @@ activity has photos attached.
 
 ### Additional Resources
 - **Simple Example**: [example.py](https://raw.githubusercontent.com/cyberjunky/python-garminconnect/master/example.py) - Getting started guide
-- **Comprehensive Demo**: [demo.py](https://raw.githubusercontent.com/cyberjunky/python-garminconnect/master/demo.py) - All 270 API methods
+- **Comprehensive Demo**: [demo.py](https://raw.githubusercontent.com/cyberjunky/python-garminconnect/master/demo.py) - All 272 API methods
 - **API Documentation**: Comprehensive method documentation in source code
 - **Test Cases**: Real-world usage examples in `tests/` directory
 
