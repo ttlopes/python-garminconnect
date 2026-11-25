@@ -2288,6 +2288,26 @@ class _FakeResp:
         return self._payload
 
 
+class _NotJSONResp(_FakeResp):
+    def json(self):
+        raise ValueError("not JSON")
+
+
+# 412 bodies Garmin returns when upload consent is missing.
+_CONSENT_NEVER_ANSWERED = {
+    "message": "The user is from EU location, but upload consent is not yet "
+    "granted or revoked",
+    "reasonCode": 2,
+    "error": "PreconditionFailedException",
+}
+# Garmin's reply misspells "explicitly"; it is corrected here for codespell.
+_CONSENT_DECLINED = {
+    "message": " User explicitly revoked consent for uploading files",
+    "reasonCode": 1,
+    "error": "PreconditionFailedException",
+}
+
+
 class TestGearActivityHttpResponses:
     """Exercise gear retrieval through the native HTTP error handling path."""
 
@@ -2374,9 +2394,38 @@ class TestGearActivityHttpResponses:
         ):
             g.import_activity(str(fit))
 
+    def test_import_activity_412_keeps_consent_error(self, tmp_path):
+        fit = tmp_path / "ride.fit"
+        fit.write_bytes(b".FIT")
+        g, response = self._garmin_response(412, _CONSENT_NEVER_ANSWERED)
+        with (
+            patch.object(g.client._api_session, "request", return_value=response),
+            pytest.raises(garminconnect.GarminConnectConsentRequiredError) as exc_info,
+        ):
+            g.import_activity(str(fit))
+        assert exc_info.value.response is response
+        assert exc_info.value.reason_code == 2
+
+    @pytest.mark.parametrize(
+        ("body", "reason_code"),
+        [(_CONSENT_NEVER_ANSWERED, 2), (_CONSENT_DECLINED, 1)],
+    )
+    def test_create_manual_activity_412_has_reason_code(self, body, reason_code):
+        g, response = self._garmin_response(412, body)
+        with (
+            patch.object(g.client._api_session, "request", return_value=response),
+            pytest.raises(garminconnect.GarminConnectConsentRequiredError) as exc_info,
+        ):
+            g.create_manual_activity(
+                "2026-01-01T10:00:00.000", "Europe/Paris", "running", 5.0, 30, "Run"
+            )
+        assert exc_info.value.reason_code == reason_code
+        assert str(exc_info.value) == f"API Error 412 - {body['message']}"
+
 
 class TestHttpErrorMapping:
-    """A 404 raises GarminConnectNotFoundError; other >=400 stay ConnectionError."""
+    """A 404 raises GarminConnectNotFoundError and a 412
+    GarminConnectConsentRequiredError; other >=400 stay ConnectionError."""
 
     def _client(self, monkeypatch, resp):
         g = garminconnect.Garmin()
@@ -2401,6 +2450,64 @@ class TestHttpErrorMapping:
         with pytest.raises(garminconnect.GarminConnectConnectionError) as exc_info:
             c._run_request("GET", "x")
         assert not isinstance(exc_info.value, garminconnect.GarminConnectNotFoundError)
+
+    def test_412_raises_consent_required(self, monkeypatch):
+        body = {"message": "precondition failed"}
+        c = self._client(monkeypatch, _FakeResp(412, body))
+        with pytest.raises(
+            garminconnect.GarminConnectConsentRequiredError
+        ) as exc_info:
+            c._run_request("POST", "upload-service/upload")
+        assert str(exc_info.value) == "API Error 412 - precondition failed"
+        assert exc_info.value.reason_code is None
+
+    @pytest.mark.parametrize(
+        ("body", "reason_code"),
+        [(_CONSENT_NEVER_ANSWERED, 2), (_CONSENT_DECLINED, 1)],
+    )
+    def test_412_reason_code_is_parsed(self, monkeypatch, body, reason_code):
+        c = self._client(monkeypatch, _FakeResp(412, body))
+        with pytest.raises(
+            garminconnect.GarminConnectConsentRequiredError
+        ) as exc_info:
+            c._run_request("POST", "activity-service/activity")
+        assert exc_info.value.reason_code == reason_code
+
+    @pytest.mark.parametrize(
+        "resp",
+        [
+            _NotJSONResp(412, "<html>Precondition Failed</html>"),
+            _FakeResp(412, ["not", "a", "dict"]),
+            _FakeResp(412, {"message": "precondition failed"}),
+            _FakeResp(412, {"reasonCode": "2"}),
+            _FakeResp(412, {"reasonCode": 2.0}),
+            _FakeResp(412, {"reasonCode": None}),
+            _FakeResp(412, {"reasonCode": True}),
+        ],
+        ids=["not-json", "list", "missing", "str", "float", "null", "bool"],
+    )
+    def test_412_reason_code_none_when_unusable(self, monkeypatch, resp):
+        c = self._client(monkeypatch, resp)
+        with pytest.raises(
+            garminconnect.GarminConnectConsentRequiredError
+        ) as exc_info:
+            c._run_request("POST", "activity-service/activity")
+        assert exc_info.value.reason_code is None
+        assert exc_info.value.response is resp
+
+    def test_consent_required_reason_code_defaults_to_none(self):
+        # The constructor is unchanged; reason_code is set after creation.
+        assert garminconnect.GarminConnectConsentRequiredError("x").reason_code is None
+
+    def test_consent_required_is_backwards_compatible(self, monkeypatch):
+        # Existing handlers catching GarminConnectConnectionError must still work.
+        c = self._client(monkeypatch, _FakeResp(412, _CONSENT_DECLINED))
+        with pytest.raises(garminconnect.GarminConnectConnectionError) as exc_info:
+            c._run_request("POST", "upload-service/upload")
+        assert isinstance(
+            exc_info.value, garminconnect.GarminConnectConsentRequiredError
+        )
+        assert exc_info.value.reason_code == 1
 
     def test_upload_failure_message_text_is_used(self, monkeypatch):
         body = {
@@ -2435,6 +2542,26 @@ class TestHttpErrorMapping:
         g = self._garmin(monkeypatch, _FakeResp(404, {"error": "NotFoundException"}))
         with pytest.raises(garminconnect.GarminConnectNotFoundError):
             g.connectapi("some/path")
+
+    def test_connectapi_412_raises_consent_required(self, monkeypatch):
+        resp = _FakeResp(412, _CONSENT_NEVER_ANSWERED)
+        g = self._garmin(monkeypatch, resp)
+        with pytest.raises(
+            garminconnect.GarminConnectConsentRequiredError
+        ) as exc_info:
+            g.connectapi("some/path")
+        assert exc_info.value.response is resp
+        assert exc_info.value.reason_code == 2
+
+    def test_connectapi_412_without_reason_code(self, monkeypatch):
+        resp = _NotJSONResp(412, "Precondition Failed")
+        g = self._garmin(monkeypatch, resp)
+        with pytest.raises(
+            garminconnect.GarminConnectConsentRequiredError
+        ) as exc_info:
+            g.connectapi("some/path")
+        assert exc_info.value.response is resp
+        assert exc_info.value.reason_code is None
 
     def test_connectapi_400_stays_connection_error_not_not_found(self, monkeypatch):
         g = self._garmin(monkeypatch, _FakeResp(400, {"message": "bad request"}))

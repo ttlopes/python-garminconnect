@@ -66,6 +66,9 @@ from .exceptions import (
     GarminConnectConnectionError as GarminConnectConnectionError,
 )
 from .exceptions import (
+    GarminConnectConsentRequiredError as GarminConnectConsentRequiredError,
+)
+from .exceptions import (
     GarminConnectInvalidFileFormatError as GarminConnectInvalidFileFormatError,
 )
 from .exceptions import (

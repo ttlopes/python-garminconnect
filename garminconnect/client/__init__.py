@@ -44,6 +44,7 @@ except ImportError:
 from ..exceptions import (
     GarminConnectAuthenticationError,
     GarminConnectConnectionError,
+    GarminConnectConsentRequiredError,
     GarminConnectNotFoundError,
     GarminConnectTooManyRequestsError,
 )
@@ -135,6 +136,7 @@ __all__ = [
     "Client",
     "GarminConnectAuthenticationError",
     "GarminConnectConnectionError",
+    "GarminConnectConsentRequiredError",
     "GarminConnectNotFoundError",
     "GarminConnectTooManyRequestsError",
     # Private helpers kept importable for existing callers and tests.

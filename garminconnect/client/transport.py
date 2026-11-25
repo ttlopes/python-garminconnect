@@ -8,7 +8,9 @@ from urllib.parse import unquote
 from ..exceptions import (
     GarminConnectAuthenticationError,
     GarminConnectConnectionError,
+    GarminConnectConsentRequiredError,
     GarminConnectNotFoundError,
+    _consent_reason_code,
 )
 from ._base import _ClientState
 from .constants import (
@@ -273,6 +275,12 @@ class ApiTransportMixin(_ClientState):
             error: GarminConnectConnectionError
             if resp.status_code == 404:
                 error = GarminConnectNotFoundError(error_msg)
+            elif resp.status_code == 412:
+                # Garmin answers 412 when the account has not granted upload
+                # consent; reasonCode 1 = declined, 2 = never answered.
+                consent_error = GarminConnectConsentRequiredError(error_msg)
+                consent_error.reason_code = _consent_reason_code(resp)
+                error = consent_error
             else:
                 error = GarminConnectConnectionError(error_msg)
             error.response = resp

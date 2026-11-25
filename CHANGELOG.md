@@ -14,6 +14,10 @@ page.
 - **Upload consent can be checked**: new `get_consent_feature(feature_type)` reads one of the account's consent records (`GET /gdprconsent-service/feature/{featureType}`), `get_upload_consent()` reads the `UPLOAD` record, and `has_upload_consent()` returns True only when its `userOption` is `opt-in`. Garmin Connect asks the account owner to agree to this before it stores uploaded data; it was seen on both EU and US accounts.
 - **Upload consent can be granted or declined**: `get_consent_text(consent_type_id="DI_CONNECT_UPLOAD", locale="en-US")` reads the consent text and its current `version` (`GET https://connect.garmin.com/consentTextServices/consentText`). `grant_upload_consent()` sends what the web app's "Agree" sends (`POST /gdprconsent-service/consent/grant`), and `decline_upload_consent()` sends what "Do Not Agree" sends (`POST /gdprconsent-service/consent/revoke/DI_CONNECT_UPLOAD/false`), which keeps the account's data and only works before consent is granted (afterwards Garmin answers 406); uploads may be refused until consent is granted again. Both read the current version from the consent text unless `consent_version` is given, and neither changes the device upload preference.
 
+### Changed
+
+- **Missing upload consent has its own error**: Garmin answers HTTP 412 Precondition Failed when the account has not granted upload consent (seen on `create_manual_activity()` for every account tested), and that now raises `GarminConnectConsentRequiredError` instead of a plain `GarminConnectConnectionError`. Its `reason_code` is Garmin's `reasonCode`: 1 when the account owner declined, 2 when they never answered. Fix it with `grant_upload_consent()` or by agreeing in Garmin Connect, and check it with `has_upload_consent()`. It subclasses `GarminConnectConnectionError`, so existing handlers keep working, and `import_activity()` passes it on unchanged instead of wrapping it.
+
 ## [0.3.20] - 2026-10-23
 
 ### Added

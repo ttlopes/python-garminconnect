@@ -314,6 +314,7 @@ feature get a 404.
 | `request_reload(cdate, device_id=None)` | Optional device id appended to the path. |
 | `get_next_scheduled_workout()` | Docstring corrected: adaptive-plan sessions are available via `get_scheduled_workouts_by_period`. |
 | `today()`, `now()`, `get_user_timezone()` | New helpers; every default date/timestamp the library fills in now uses the profile timezone. |
+| All API calls | HTTP 412 Precondition Failed raises `GarminConnectConsentRequiredError`, a subclass of `GarminConnectConnectionError`. Garmin returns 412 when the account has not granted upload consent; its `reason_code` is the body's `reasonCode`, 1 when the owner declined and 2 when they never answered. Verified with `create_manual_activity()` on every account tested; fixed by `grant_upload_consent()`. |
 
 ## Differences found and deliberately kept
 

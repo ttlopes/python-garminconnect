@@ -18,8 +18,10 @@ from requests import HTTPError
 from ..exceptions import (
     GarminConnectAuthenticationError,
     GarminConnectConnectionError,
+    GarminConnectConsentRequiredError,
     GarminConnectNotFoundError,
     GarminConnectTooManyRequestsError,
+    _consent_reason_code,
 )
 
 logger = logging.getLogger(__name__)
@@ -587,6 +589,15 @@ def _handle_api_errors(
                         if resp is not None:
                             not_found_exc.response = resp
                         raise not_found_exc from e
+                    if status == 412:
+                        consent_exc = GarminConnectConsentRequiredError(
+                            f"{label} client error ({status}): {e}"
+                        )
+                        resp = getattr(e, "response", None)
+                        if resp is not None:
+                            consent_exc.response = resp
+                            consent_exc.reason_code = _consent_reason_code(resp)
+                        raise consent_exc from e
                     if status and 400 <= status < 500:
                         new_exc = GarminConnectConnectionError(
                             f"{label} client error ({status}): {e}"

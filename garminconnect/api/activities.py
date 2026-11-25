@@ -8,6 +8,7 @@ from requests import HTTPError
 
 from ..exceptions import (
     GarminConnectConnectionError,
+    GarminConnectConsentRequiredError,
     GarminConnectInvalidFileFormatError,
 )
 from ._common import (
@@ -330,6 +331,8 @@ class ActivitiesMixin(GarminBase):
                     result: dict[str, Any] = response.json()
                     return result
                 return {"status": "uploaded", "fileName": file_base_name}
+        except GarminConnectConsentRequiredError:
+            raise
         except (HTTPError, GarminConnectConnectionError) as e:
             if isinstance(e, GarminConnectConnectionError):
                 status = getattr(getattr(e, "response", None), "status_code", None)

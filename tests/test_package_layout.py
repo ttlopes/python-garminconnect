@@ -64,6 +64,7 @@ def test_walking_and_hiking_uploads_raise(kind):
     [
         "GarminConnectAuthenticationError",
         "GarminConnectConnectionError",
+        "GarminConnectConsentRequiredError",
         "GarminConnectNotFoundError",
         "GarminConnectTooManyRequestsError",
     ],
