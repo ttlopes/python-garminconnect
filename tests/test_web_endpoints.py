@@ -220,6 +220,27 @@ def test_has_upload_consent_needs_opt_in(api, option, source, granted):
     assert g.has_upload_consent() is granted
 
 
+def test_consent_text_url_params_and_rejected_inputs(api):
+    g, rec = api
+    g.get_consent_text()
+    _, path, kw = _last(rec)
+    assert path == "https://connect.garmin.com/consentTextServices/consentText"
+    assert kw["params"] == {"consentTypeId": "DI_CONNECT_UPLOAD", "locale": "en-US"}
+    g.get_consent_text("di_connect_upload", "nl-NL")
+    assert _last(rec)[2]["params"] == {
+        "consentTypeId": "DI_CONNECT_UPLOAD",
+        "locale": "nl-NL",
+    }
+    sent = len(rec.calls)
+    for bad_type in ("UPLOAD", "DI_CONNECT_UPLOAD/x", "", None):
+        with pytest.raises(ValueError):
+            g.get_consent_text(bad_type)
+    for bad_locale in ("en", "en_US", "EN-us", "en-US&x=1", "../en-US", "", None):
+        with pytest.raises(ValueError):
+            g.get_consent_text(locale=bad_locale)
+    assert len(rec.calls) == sent
+
+
 def test_client_accepts_only_garmin_hosts_for_absolute_urls():
     from garminconnect.client import Client
 
@@ -464,3 +485,86 @@ def test_update_activity_partial_put(writer):
     }
     with pytest.raises(ValueError):
         g.update_activity(987654, {})
+
+
+@pytest.fixture
+def consent_writer(writer, monkeypatch):
+    """``writer`` whose consent text read returns version 73."""
+    g, calls = writer
+    reads: list[tuple[str, dict]] = []
+
+    def fake_read(path, **kw):
+        reads.append((path, kw))
+        return [{"consentTypeId": "DI_CONNECT_UPLOAD", "version": "73"}]
+
+    monkeypatch.setattr(g, "connectapi", fake_read)
+    return g, calls, reads
+
+
+def test_grant_upload_consent_posts_exact_body(consent_writer):
+    g, calls, reads = consent_writer
+    g.grant_upload_consent()
+    method, url, kw = calls[-1]
+    assert (method, url) == ("POST", "/gdprconsent-service/consent/grant")
+    assert kw["json"] == {
+        "consentTypeId": "DI_CONNECT_UPLOAD",
+        "consentLocale": "en-US",
+        "consentVersion": "73",
+    }
+    assert reads[-1][1]["params"]["locale"] == "en-US"
+    reads.clear()
+    g.grant_upload_consent(74, locale="nl-NL")
+    assert calls[-1][2]["json"] == {
+        "consentTypeId": "DI_CONNECT_UPLOAD",
+        "consentLocale": "nl-NL",
+        "consentVersion": "74",
+    }
+    assert reads == []  # an explicit version skips the consent text read
+
+
+def test_decline_upload_consent_posts_exact_body_and_never_deletes(consent_writer):
+    g, calls, _ = consent_writer
+    g.decline_upload_consent()
+    method, url, kw = calls[-1]
+    assert (method, url) == (
+        "POST",
+        "/gdprconsent-service/consent/revoke/DI_CONNECT_UPLOAD/false",
+    )
+    assert kw["json"] == {
+        "consentTypeId": "DI_CONNECT_UPLOAD",
+        "clientIndicator": False,
+        "consentLocale": "en-US",
+        "consentVersion": "73",
+    }
+    g.decline_upload_consent("75", locale="de-DE")
+    assert calls[-1][1].endswith("/DI_CONNECT_UPLOAD/false")
+    assert calls[-1][2]["json"]["consentVersion"] == "75"
+    assert calls[-1][2]["json"]["clientIndicator"] is False
+
+
+@pytest.mark.parametrize("method", ["grant_upload_consent", "decline_upload_consent"])
+@pytest.mark.parametrize(
+    "texts", [[], [{}], [{"version": ""}], [{"version": None}], {"version": "73"}]
+)
+def test_upload_consent_needs_a_version_from_the_text(
+    writer, monkeypatch, method, texts
+):
+    from garminconnect.exceptions import GarminConnectConnectionError
+
+    g, calls = writer
+    monkeypatch.setattr(g, "connectapi", lambda path, **kw: texts)
+    with pytest.raises(GarminConnectConnectionError):
+        getattr(g, method)()
+    assert calls == []
+
+
+@pytest.mark.parametrize("method", ["grant_upload_consent", "decline_upload_consent"])
+def test_upload_consent_rejects_bad_inputs_without_sending(consent_writer, method):
+    g, calls, reads = consent_writer
+    for bad_version in (0, -1, "", "  ", "7a", "1.5", 1.5, True):
+        with pytest.raises(ValueError):
+            getattr(g, method)(bad_version)
+    for bad_locale in ("en", "en_US", "en-US/x", "", None):
+        with pytest.raises(ValueError):
+            getattr(g, method)("73", locale=bad_locale)
+    assert calls == [] and reads == []

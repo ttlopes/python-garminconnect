@@ -9,6 +9,7 @@ from .activity_details import (
 from .api import Garmin as Garmin
 from .api._common import (  # noqa: F401
     _STATUS_CODE_RE,
+    CONSENT_LOCALE_REGEX,
     DATE_FORMAT_REGEX,
     DATE_FORMAT_STR,
     HOLE_NUMBERS_REGEX,
@@ -21,6 +22,7 @@ from .api._common import (  # noqa: F401
     UTC_OFFSET_MIN_MINUTES,
     UTC_OFFSET_REGEX,
     VALID_CONSENT_FEATURE_TYPES,
+    VALID_CONSENT_TYPE_IDS,
     VALID_DAILY_STATS_TYPES,
     VALID_MENSTRUAL_DISCHARGE,
     VALID_MENSTRUAL_FLOW,

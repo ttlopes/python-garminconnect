@@ -11,7 +11,7 @@
 The Garmin Connect API library comes with two examples:
 
 - **`example.py`** - Simple getting-started example showing authentication, token storage, and basic API calls
-- **`demo.py`** - Comprehensive demo providing access to **273 API methods** organized into **15 categories** for easy navigation
+- **`demo.py`** - Comprehensive demo providing access to **276 API methods** organized into **15 categories** for easy navigation
 
 ```bash
 $ ./demo.py
@@ -51,10 +51,10 @@ Make your selection:
 
 ## API Coverage Statistics
 
-- **Total API Methods**: 351 methods; every method with a one-line description is listed in the [Method Reference](#-method-reference)
+- **Total API Methods**: 354 methods; every method with a one-line description is listed in the [Method Reference](#-method-reference)
 - **Categories**: 15 organized sections
 - **Web-app endpoint map**: the endpoints the Garmin Connect web app uses documented with the exact request it sends and whether it was verified live, in [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md); the dashboard's GraphQL operations are in [docs/graphql_operations.md](docs/graphql_operations.md)
-- **User & Profile**: 11 methods (basic user info, settings, upload consent)
+- **User & Profile**: 14 methods (basic user info, settings, upload consent)
 - **Daily Health & Activity**: 21 methods (today's health data plus daily calories, resting HR and sleep ranges)
 - **Advanced Health Metrics**: 35 methods (fitness metrics, HRV, VO2, FTP range, training readiness, training zones, running tolerance, training load balance, daily training status, activity training load)
 - **Historical Data & Trends**: 29 methods (date range queries, weekly aggregates)
@@ -131,22 +131,24 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e ".[example]"
 
 python3 ./example.py   # simple getting-started example
-python3 ./demo.py      # comprehensive demo (273 API methods)
+python3 ./demo.py      # comprehensive demo (276 API methods)
 ```
 
 ## 📚 Method Reference
 
 <!-- METHODS:START -->
-351 public methods on `Garmin`, generated from the code by `scripts/gen_method_reference.py`. Click a section to expand it.
+354 public methods on `Garmin`, generated from the code by `scripts/gen_method_reference.py`. Click a section to expand it.
 
-<details><summary><b>Login, profile & account</b> (24)</summary>
+<details><summary><b>Login, profile & account</b> (27)</summary>
 
 | Method | Description |
 | --- | --- |
 | `connectapi(path, **kwargs)` | Send a GET to a Connect API path and return the decoded JSON. |
 | `connectwebproxy(path, **kwargs)` | Send a GET to a Connect API path (legacy alias of `connectapi`). |
+| `decline_upload_consent(consent_version=None, locale='en-US')` | Decline upload consent without deleting any data. |
 | `download(path, **kwargs)` | Download raw bytes from a Connect API path. |
 | `get_consent_feature(feature_type)` | Return the account's consent record for one feature. |
+| `get_consent_text(consent_type_id='DI_CONNECT_UPLOAD', locale='en-US')` | Return the text of a consent, including the version to agree to. |
 | `get_full_name()` | Return full name of the authenticated user. |
 | `get_personal_information(include_biometric=True, include_vo2max=True)` | Return personal information: `userInfo` (birth date, gender, locale, timeZone, country), `biometricProfile` and VO2 max. |
 | `get_privacy_settings()` | Return the account's activity, profile and wellness privacy settings. |
@@ -157,6 +159,7 @@ python3 ./demo.py      # comprehensive demo (273 API methods)
 | `get_user_profile_base()` | Return the base profile record (names, birth date, create date, ...). |
 | `get_user_timezone()` | Return the IANA timezone name from the user's Garmin profile. |
 | `get_userprofile_settings()` | Return the user profile settings (display name, locale, preferences). |
+| `grant_upload_consent(consent_version=None, locale='en-US')` | Grant upload consent (storage and processing of uploaded data). |
 | `has_upload_consent()` | Return True when the account owner has granted upload consent. |
 | `login(tokenstore=None)` | Log in with saved tokens or credentials and load the user profile. |
 | `logout(tokenstore=None)` | Clear in-memory auth state and any cached tokens on disk. |
@@ -1045,7 +1048,7 @@ activity has photos attached.
 
 ### Additional Resources
 - **Simple Example**: [example.py](https://raw.githubusercontent.com/cyberjunky/python-garminconnect/master/example.py) - Getting started guide
-- **Comprehensive Demo**: [demo.py](https://raw.githubusercontent.com/cyberjunky/python-garminconnect/master/demo.py) - All 273 API methods
+- **Comprehensive Demo**: [demo.py](https://raw.githubusercontent.com/cyberjunky/python-garminconnect/master/demo.py) - All 276 API methods
 - **API Documentation**: Comprehensive method documentation in source code
 - **Test Cases**: Real-world usage examples in `tests/` directory
 

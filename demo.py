@@ -200,6 +200,15 @@ menu_categories = {
                 "desc": "Has upload consent been granted",
                 "key": "has_upload_consent",
             },
+            "c": {"desc": "Upload consent text", "key": "get_consent_text"},
+            "d": {
+                "desc": "Grant upload consent (interactive)",
+                "key": "grant_upload_consent",
+            },
+            "e": {
+                "desc": "Decline upload consent, keep data (interactive)",
+                "key": "decline_upload_consent",
+            },
         },
     },
     "2": {
@@ -5345,6 +5354,30 @@ def set_primary_training_device_data(api: Garmin) -> None:
         print(f"❌ Error setting primary training device: {e}")
 
 
+def upload_consent_data(api: Garmin, grant: bool) -> None:
+    """Grant or decline upload consent after showing the current state."""
+    method = "grant_upload_consent" if grant else "decline_upload_consent"
+    try:
+        record = api.get_upload_consent()
+        print(f"Upload consent is now: {record.get('userOption')}")
+        if not grant:
+            print(
+                "Declining sends the web app's 'Do Not Agree': no data is "
+                "deleted, but uploads may be refused until consent is granted."
+            )
+        action = "Grant" if grant else "Decline"
+        if input(f"{action} upload consent? (y/N): ").strip().lower() != "y":
+            print("Cancelled")
+            return
+        call_and_display(
+            getattr(api, method),
+            method_name=method,
+            api_call_desc=f"api.{method}()",
+        )
+    except Exception as e:
+        print(f"❌ Error changing upload consent: {e}")
+
+
 def update_activity_name_data(api: Garmin) -> None:
     """Rename the latest activity through the generic update call."""
     try:
@@ -6189,6 +6222,9 @@ def execute_api_call(api: Garmin, key: str) -> None:
             ),
             "get_upload_consent": _web(api, "get_upload_consent"),
             "has_upload_consent": _web(api, "has_upload_consent"),
+            "get_consent_text": _web(api, "get_consent_text"),
+            "grant_upload_consent": lambda: upload_consent_data(api, grant=True),
+            "decline_upload_consent": lambda: upload_consent_data(api, grant=False),
             "get_jetlag_status": _web(api, "get_jetlag_status"),
             "get_gear_list": _web(api, "get_gear_list"),
             "get_gear_types": _web(api, "get_gear_types"),

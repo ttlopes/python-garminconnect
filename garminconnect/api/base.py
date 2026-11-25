@@ -27,6 +27,8 @@ from ._common import (
     _handle_api_errors,
     _is_legacy_garth_tokenstore,
     _looks_like_json,
+    _validate_consent_locale,
+    _validate_consent_type_id,
     _validate_date_format,
     logger,
 )
@@ -364,6 +366,13 @@ class GarminBase:
         )
         self.garmin_connect_jetlag_url = "/jetlag-service/jetlag"
         self.garmin_connect_consent_feature_url = "/gdprconsent-service/feature"
+        self.garmin_connect_consent_url = "/gdprconsent-service/consent"
+        # The web app reads consent text from connect.<domain> itself, not
+        # through connectapi.
+        self.garmin_connect_consent_text_url = (
+            f"https://connect.{'garmin.cn' if is_cn else 'garmin.com'}"
+            "/consentTextServices/consentText"
+        )
         self.garmin_connect_ecg_url = (
             f"https://ghs.{'garmin.cn' if is_cn else 'garmin.com'}/ghs/ecg/v1/ecg"
         )
@@ -985,6 +994,96 @@ class GarminBase:
         """
         record = self.get_upload_consent()
         return isinstance(record, dict) and record.get("userOption") == "opt-in"
+
+    def get_consent_text(
+        self, consent_type_id: str = "DI_CONNECT_UPLOAD", locale: str = "en-US"
+    ) -> list[dict[str, Any]]:
+        """Return the text of a consent, including the version to agree to.
+
+        GET https://connect.garmin.com/consentTextServices/consentText with
+        ``consentTypeId`` and ``locale``. Returns a list; each item's
+        ``version`` is what ``grant_upload_consent()`` and
+        ``decline_upload_consent()`` send as ``consentVersion``, and
+        ``consentCopyBlocks`` holds the text the web app shows.
+        """
+        consent_type_id = _validate_consent_type_id(consent_type_id)
+        locale = _validate_consent_locale(locale)
+        params = {"consentTypeId": consent_type_id, "locale": locale}
+        logger.debug("Requesting consent text %s/%s", consent_type_id, locale)
+        return self.connectapi(self.garmin_connect_consent_text_url, params=params)
+
+    def _upload_consent_version(
+        self, consent_version: int | str | None, locale: str
+    ) -> str:
+        """Validate ``consent_version``, or read the current one from the text."""
+        if consent_version is not None:
+            return str(_coerce_positive_id(consent_version, "consent_version"))
+        texts = self.get_consent_text("DI_CONNECT_UPLOAD", locale)
+        first = texts[0] if isinstance(texts, list) and texts else None
+        version = first.get("version") if isinstance(first, dict) else None
+        text = "" if isinstance(version, bool) else str(version).strip()
+        if not (text.isascii() and text.isdigit()):
+            raise GarminConnectConnectionError(
+                "Upload consent text has no usable version; pass consent_version"
+            )
+        return text
+
+    def grant_upload_consent(
+        self, consent_version: int | str | None = None, locale: str = "en-US"
+    ) -> dict[str, Any]:
+        """Grant upload consent (storage and processing of uploaded data).
+
+        POST /gdprconsent-service/consent/grant with
+        ``{"consentTypeId": "DI_CONNECT_UPLOAD", "consentLocale", "consentVersion"}``,
+        which is what the web app's "Agree" sends. Without ``consent_version``
+        the current version is read from ``get_consent_text()``. Returns the
+        consent with ``consentState: "GRANTED"``. It does not change the
+        device upload preference (``account.deviceSync``), which the web app
+        sets separately.
+        """
+        locale = _validate_consent_locale(locale)
+        version = self._upload_consent_version(consent_version, locale)
+        payload = {
+            "consentTypeId": "DI_CONNECT_UPLOAD",
+            "consentLocale": locale,
+            "consentVersion": version,
+        }
+        logger.debug("Granting upload consent version %s", version)
+        return self.client.post(
+            "connectapi",
+            f"{self.garmin_connect_consent_url}/grant",
+            json=payload,
+            api=True,
+        )
+
+    def decline_upload_consent(
+        self, consent_version: int | str | None = None, locale: str = "en-US"
+    ) -> dict[str, Any]:
+        """Decline upload consent without deleting any data.
+
+        POST /gdprconsent-service/consent/revoke/DI_CONNECT_UPLOAD/false with
+        ``{"consentTypeId": "DI_CONNECT_UPLOAD", "clientIndicator": false,
+        "consentLocale", "consentVersion"}``, which is what the web app's
+        "Do Not Agree" sends. The reply seen was ``consentState: "REVOKED"``
+        with ``deleteStatus: "NOT_REQUIRED"``: no data was deleted. Writes
+        such as uploads may be refused afterwards; ``grant_upload_consent()``
+        undoes it. Without ``consent_version`` the current version is read from
+        ``get_consent_text()``. It does not change the device upload preference
+        (``account.deviceSync``), which the web app sets separately.
+        """
+        locale = _validate_consent_locale(locale)
+        version = self._upload_consent_version(consent_version, locale)
+        payload = {
+            "consentTypeId": "DI_CONNECT_UPLOAD",
+            "clientIndicator": False,
+            "consentLocale": locale,
+            "consentVersion": version,
+        }
+        # The trailing "false" is fixed: this method never asks Garmin to
+        # delete the account's data.
+        url = f"{self.garmin_connect_consent_url}/revoke/DI_CONNECT_UPLOAD/false"
+        logger.debug("Declining upload consent version %s", version)
+        return self.client.post("connectapi", url, json=payload, api=True)
 
     def logout(self, tokenstore: str | None = None) -> None:
         """Clear in-memory auth state and any cached tokens on disk.

@@ -73,6 +73,11 @@ VALID_CONSENT_FEATURE_TYPES = frozenset(
         "UPLOAD",
     }
 )
+# Consent types whose text, grant and decline the library supports
+# (consentTextServices/consentText?consentTypeId=, gdprconsent-service/consent)
+VALID_CONSENT_TYPE_IDS = frozenset({"DI_CONNECT_UPLOAD"})
+# Locale sent with consent requests, e.g. "en-US"
+CONSENT_LOCALE_REGEX = r"^[a-z]{2}-[A-Z]{2}$"
 # Series accepted by usersummary-service/stats/daily?statsType=
 VALID_DAILY_STATS_TYPES = frozenset({"STEPS", "PUSHES", "CALORIES"})
 VALID_MENSTRUAL_FLOW = frozenset({"LIGHT", "MEDIUM", "HEAVY"})
@@ -260,6 +265,27 @@ def _validate_sport_key(value: str, param_name: str = "sport") -> str:
     if not re.fullmatch(SPORT_KEY_REGEX, normalized):
         raise ValueError(f"{param_name} must contain only letters and underscores")
     return normalized
+
+
+def _validate_consent_type_id(value: str) -> str:
+    """Validate a consent type id against the supported set."""
+    if not isinstance(value, str):
+        raise ValueError("consent_type_id must be a string")
+    value = value.strip().upper()
+    if value not in VALID_CONSENT_TYPE_IDS:
+        raise ValueError(
+            f"consent_type_id must be one of {sorted(VALID_CONSENT_TYPE_IDS)}"
+        )
+    return value
+
+
+def _validate_consent_locale(value: str) -> str:
+    """Validate a consent locale such as ``en-US``."""
+    if not isinstance(value, str) or not re.fullmatch(
+        CONSENT_LOCALE_REGEX, value.strip()
+    ):
+        raise ValueError("locale must look like 'en-US'")
+    return value.strip()
 
 
 def _validate_uuid(value: str, param_name: str = "uuid") -> str:
