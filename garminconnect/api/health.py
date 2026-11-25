@@ -1058,6 +1058,12 @@ class HealthMixin(GarminBase):
         dt = self._localize(dt)
         return (dt - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(milliseconds=1)
 
+    def _daily_sleep_id(self, cdate: str) -> Any:
+        """Return the id of the day's sleep from :meth:`get_daily_sleep`, or None."""
+        current = self.get_daily_sleep(cdate)
+        dto = current.get("dailySleepDTO") if isinstance(current, dict) else None
+        return dto.get("id") if isinstance(dto, dict) else None
+
     def _sleep_window_payload(
         self, cdate: str, sleep_start: datetime | str, sleep_end: datetime | str
     ) -> dict[str, Any]:
@@ -1103,8 +1109,17 @@ class HealthMixin(GarminBase):
         :meth:`update_sleep_window` to change it later. A sleep entry cannot
         be deleted: Garmin answers 405 and the web app has no delete either.
         Verified live by reading the day back.
+
+        Garmin itself would silently replace a day's existing sleep (verified
+        live), which could be a night recorded by a watch, so the day is read
+        first and a ``ValueError`` is raised if it already has sleep.
         """
         payload = self._sleep_window_payload(cdate, sleep_start, sleep_end)
+        if self._daily_sleep_id(payload["calendarDate"]) is not None:
+            raise ValueError(
+                f"{payload['calendarDate']} already has sleep; "
+                "use update_sleep_window() to change it"
+            )
         url = f"{self.garmin_connect_sleep_service_url}/sleep/dailySleep"
         logger.debug("Creating sleep window for %s", payload["calendarDate"])
         return self._json_or_none(self.client.post("connectapi", url, json=payload))
@@ -1121,15 +1136,13 @@ class HealthMixin(GarminBase):
         Raises ``ValueError`` when the day has no sleep. Returns the updated
         daily sleep object.
 
-        Verified live changing the wake time of a manually added sleep. Moving
-        the start time (``id`` equals the start timestamp, so it may change)
-        and editing sleep recorded by a watch were not tried. A sleep entry
+        Verified live changing the wake time and the bed time of a manually
+        added sleep; after moving the bed time, ``id`` reads back as the new
+        start timestamp. Editing sleep recorded by a watch was not tried. A sleep entry
         cannot be deleted: Garmin answers 405 and the web app has no delete.
         """
         payload = self._sleep_window_payload(cdate, sleep_start, sleep_end)
-        current = self.get_daily_sleep(payload["calendarDate"])
-        dto = current.get("dailySleepDTO") if isinstance(current, dict) else None
-        sleep_id = dto.get("id") if isinstance(dto, dict) else None
+        sleep_id = self._daily_sleep_id(payload["calendarDate"])
         if sleep_id is None:
             raise ValueError(
                 f"No sleep on {payload['calendarDate']} to update; "

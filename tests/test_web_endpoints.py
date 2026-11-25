@@ -471,8 +471,11 @@ def _sleep_body(**extra):
         ),
     ],
 )
-def test_create_sleep_window_posts_epoch_ms(writer, start, end):
+def test_create_sleep_window_posts_epoch_ms(writer, monkeypatch, start, end):
     g, calls = writer
+    monkeypatch.setattr(
+        g, "connectapi", lambda path, **kw: {"dailySleepDTO": {"id": None}}
+    )
     out = g.create_sleep_window("2026-11-25", start, end)
     method, url, kw = calls[-1]
     assert (method, url) == ("POST", "/sleep-service/sleep/dailySleep")
@@ -506,6 +509,16 @@ def test_update_sleep_window_reads_id_then_puts(writer, monkeypatch):
         sleepEndTimestampGMT=_SLEEP_END_MS + 3600 * 1000,
         sleepTimeSeconds=9 * 3600,
     )
+
+
+def test_create_sleep_window_refuses_a_day_with_sleep(writer, monkeypatch):
+    g, calls = writer
+    monkeypatch.setattr(
+        g, "connectapi", lambda path, **kw: {"dailySleepDTO": {"id": _SLEEP_START_MS}}
+    )
+    with pytest.raises(ValueError, match="already has sleep"):
+        g.create_sleep_window("2026-11-25", "2026-11-24T22:00", "2026-11-25T06:00")
+    assert calls == []
 
 
 def test_update_sleep_window_without_sleep_raises(writer, monkeypatch):
@@ -548,6 +561,9 @@ def test_sleep_window_rejects_bad_input_without_request(
 def test_sleep_window_reloads_missing_profile_id(writer, monkeypatch):
     g, calls = writer
     g.profile_id = None
+    monkeypatch.setattr(
+        g, "connectapi", lambda path, **kw: {"dailySleepDTO": {"id": None}}
+    )
 
     def fail():
         raise RuntimeError("offline")
