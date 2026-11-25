@@ -3,13 +3,14 @@
 import math
 import numbers
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..exceptions import GarminConnectAuthenticationError, GarminConnectConnectionError
 from ._common import (
     DATE_FORMAT_STR,
     MAX_HYDRATION_ML,
+    MAX_SLEEP_WINDOW_MS,
     VALID_DAILY_STATS_TYPES,
     _coerce_positive_id,
     _fmt_ts,
@@ -1036,6 +1037,138 @@ class HealthMixin(GarminBase):
             )
         logger.debug("Requesting daily sleep")
         return self.connectapi(url, params=params)
+
+    def _sleep_timestamp_ms(self, value: datetime | str, name: str) -> int:
+        """Return a sleep time as epoch milliseconds.
+
+        Accepts a ``datetime`` or an ISO 8601 string. A value without an offset
+        is read as the user's Garmin timezone, like the other write methods.
+        """
+        if isinstance(value, str):
+            try:
+                dt = datetime.fromisoformat(value.strip())
+            except ValueError as e:
+                raise ValueError(
+                    f"{name} must be an ISO 8601 date and time, got: {value!r}"
+                ) from e
+        elif isinstance(value, datetime):
+            dt = value
+        else:
+            raise ValueError(f"{name} must be a datetime or an ISO 8601 string")
+        dt = self._localize(dt)
+        return (dt - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(milliseconds=1)
+
+    def _sleep_window_payload(
+        self, cdate: str, sleep_start: datetime | str, sleep_end: datetime | str
+    ) -> dict[str, Any]:
+        """Validate a sleep window and return the body Garmin expects for it."""
+        cdate = _validate_date_format(cdate, "cdate")
+        start_ms = self._sleep_timestamp_ms(sleep_start, "sleep_start")
+        end_ms = self._sleep_timestamp_ms(sleep_end, "sleep_end")
+        if end_ms <= start_ms:
+            raise ValueError("sleep_end must be after sleep_start")
+        if end_ms - start_ms >= MAX_SLEEP_WINDOW_MS:
+            raise ValueError("a sleep window must be shorter than 24 hours")
+        wake_day = datetime.fromtimestamp(end_ms / 1000, self._user_tzinfo()).date()
+        if wake_day.isoformat() != cdate:
+            raise ValueError(
+                f"cdate must be the day you wake up ({wake_day.isoformat()}), "
+                f"got: {cdate}"
+            )
+        return {
+            "calendarDate": cdate,
+            "sleepStartTimestampGMT": start_ms,
+            "sleepEndTimestampGMT": end_ms,
+            "sleepTimeSeconds": (end_ms - start_ms) // 1000,
+            "napTimeSeconds": 0,
+            "sleepWindowConfirmed": True,
+            "userProfilePK": self._require_profile_id(),
+            "sleepWindowConfirmationType": "manually_confirmed",
+        }
+
+    def create_sleep_window(
+        self, cdate: str, sleep_start: datetime | str, sleep_end: datetime | str
+    ) -> Any:
+        """Add a sleep window (bed and wake time) for a day without sleep.
+
+        POST /sleep-service/sleep/dailySleep, the web app's "Add Manual Sleep".
+        ``cdate`` is the day you wake up: bed at 22:00 on the 24th and wake at
+        06:00 on the 25th belongs to the 25th. ``sleep_start`` and ``sleep_end``
+        are a ``datetime`` or an ISO 8601 string such as
+        ``"2026-11-24T22:00:00"``; without an offset they are read as the
+        user's Garmin timezone. The window must be shorter than 24 hours.
+
+        Returns the daily sleep object, with ``id`` still null; read back with
+        :meth:`get_daily_sleep`, ``id`` equals ``sleepStartTimestampGMT``. Use
+        :meth:`update_sleep_window` to change it later. A sleep entry cannot
+        be deleted: Garmin answers 405 and the web app has no delete either.
+        Verified live by reading the day back.
+        """
+        payload = self._sleep_window_payload(cdate, sleep_start, sleep_end)
+        url = f"{self.garmin_connect_sleep_service_url}/sleep/dailySleep"
+        logger.debug("Creating sleep window for %s", payload["calendarDate"])
+        return self._json_or_none(self.client.post("connectapi", url, json=payload))
+
+    def update_sleep_window(
+        self, cdate: str, sleep_start: datetime | str, sleep_end: datetime | str
+    ) -> Any:
+        """Change the bed and wake time of a day's sleep.
+
+        Reads the day with :meth:`get_daily_sleep` for the current sleep
+        ``id``, then sends PUT /sleep-service/sleep/dailySleep/{id} with the
+        same fields as :meth:`create_sleep_window` plus ``id``, as the web
+        app's "Edit Sleep Times" does. The times are accepted the same way.
+        Raises ``ValueError`` when the day has no sleep. Returns the updated
+        daily sleep object.
+
+        Verified live changing the wake time of a manually added sleep. Moving
+        the start time (``id`` equals the start timestamp, so it may change)
+        and editing sleep recorded by a watch were not tried. A sleep entry
+        cannot be deleted: Garmin answers 405 and the web app has no delete.
+        """
+        payload = self._sleep_window_payload(cdate, sleep_start, sleep_end)
+        current = self.get_daily_sleep(payload["calendarDate"])
+        dto = current.get("dailySleepDTO") if isinstance(current, dict) else None
+        sleep_id = dto.get("id") if isinstance(dto, dict) else None
+        if sleep_id is None:
+            raise ValueError(
+                f"No sleep on {payload['calendarDate']} to update; "
+                "use create_sleep_window() instead"
+            )
+        sleep_id = _coerce_positive_id(sleep_id, "id")
+        payload["id"] = sleep_id
+        url = f"{self.garmin_connect_sleep_service_url}/sleep/dailySleep/{sleep_id}"
+        logger.debug("Updating sleep window for %s", payload["calendarDate"])
+        return self._json_or_none(self.client.put("connectapi", url, json=payload))
+
+    def set_sleep_note(self, cdate: str, note: str) -> Any:
+        """Set the note on a day's sleep.
+
+        PUT /sleep-service/sleep/dailySleep/{date}/note ``{"userNote"}``;
+        Garmin echoes the body. An empty string sets an empty note. Read the
+        note back with ``get_sleep_data(cdate)["dailySleepDTO"]["userNote"]``.
+        A note on a day without sleep was not tried.
+        """
+        cdate = _validate_date_format(cdate, "cdate")
+        if not isinstance(note, str):
+            raise ValueError("note must be a string")
+        url = f"{self.garmin_connect_sleep_service_url}/sleep/dailySleep/{cdate}/note"
+        logger.debug("Setting sleep note for %s", cdate)
+        return self._json_or_none(
+            self.client.put("connectapi", url, json={"userNote": note})
+        )
+
+    def delete_sleep_note(self, cdate: str) -> Any:
+        """Remove the note from a day's sleep.
+
+        DELETE /sleep-service/sleep/dailySleep/{date}/note; Garmin answers 204
+        and ``get_sleep_data(cdate)["dailySleepDTO"]["userNote"]`` reads back
+        null. Only the note is removed: a sleep entry itself cannot be deleted.
+        """
+        cdate = _validate_date_format(cdate, "cdate")
+        url = f"{self.garmin_connect_sleep_service_url}/sleep/dailySleep/{cdate}/note"
+        logger.debug("Deleting sleep note for %s", cdate)
+        return self._json_or_none(self.client.delete("connectapi", url))
 
     def get_naps(
         self, cdate: str | None = None, include_overlaps: bool = True

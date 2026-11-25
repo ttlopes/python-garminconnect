@@ -7,6 +7,12 @@ Numbers in parentheses refer to GitHub issues and pull requests. Releases before
 0.3.10 are described on the [GitHub Releases](https://github.com/cyberjunky/python-garminconnect/releases)
 page.
 
+## [Unreleased]
+
+### Added
+
+- **Sleep times and sleep notes can be written**: new `create_sleep_window(cdate, sleep_start, sleep_end)` adds a sleep window the way the web app's "Add Manual Sleep" does, and `update_sleep_window()` changes the bed and wake time of a day's sleep like "Edit Sleep Times". `cdate` is the day you wake up; the times are a `datetime` or an ISO 8601 string, read as your Garmin profile timezone when they have no offset. `set_sleep_note(cdate, note)` and `delete_sleep_note(cdate)` set and remove the note on a day's sleep; read it back from `get_sleep_data(cdate)["dailySleepDTO"]["userNote"]`. Garmin has no way to delete a sleep entry. Each call was checked live by reading the day back.
+
 ## [0.3.20] - 2026-10-23
 
 ### Added

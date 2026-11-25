@@ -732,6 +732,28 @@ class GarminBase:
             )
         return quote(self.display_name, safe="")
 
+    def _require_profile_id(self) -> int:
+        """Return profile_id, reloading the profile if unset.
+
+        Some write payloads must name the user's profile, so one reload is
+        attempted before giving up rather than sending a body without it.
+        """
+        if self.profile_id is None:
+            try:
+                self._load_social_profile()
+            except Exception as e:
+                raise GarminConnectConnectionError(
+                    "Could not load the Garmin social profile, so the profile "
+                    "id required for this request is unavailable. "
+                    "Please log in again."
+                ) from e
+        if self.profile_id is None:
+            raise GarminConnectConnectionError(
+                "Profile id is not set. Your Garmin profile did not include "
+                "a profile id, so this request cannot be made."
+            )
+        return self.profile_id
+
     def get_full_name(self) -> str | None:
         """Return full name of the authenticated user."""
         return self.full_name

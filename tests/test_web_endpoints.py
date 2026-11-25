@@ -5,11 +5,11 @@ path and query parameters each method sends, which is what matters for
 compatibility with Garmin's undocumented API.
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from garminconnect import Garmin
+from garminconnect import Garmin, GarminConnectConnectionError
 
 
 class _Recorder:
@@ -436,3 +436,160 @@ def test_update_activity_partial_put(writer):
     }
     with pytest.raises(ValueError):
         g.update_activity(987654, {})
+
+
+# 2026-11-24 22:00 to 2026-11-25 06:00 in Europe/Amsterdam (UTC+1).
+_SLEEP_START_MS = 1795554000000
+_SLEEP_END_MS = 1795582800000
+
+
+def _sleep_body(**extra):
+    return {
+        "calendarDate": "2026-11-25",
+        "sleepStartTimestampGMT": _SLEEP_START_MS,
+        "sleepEndTimestampGMT": _SLEEP_END_MS,
+        "sleepTimeSeconds": 8 * 3600,
+        "napTimeSeconds": 0,
+        "sleepWindowConfirmed": True,
+        "userProfilePK": 4242,
+        "sleepWindowConfirmationType": "manually_confirmed",
+        **extra,
+    }
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        # Naive values are the user's Garmin timezone (Europe/Amsterdam).
+        ("2026-11-24T22:00:00", "2026-11-25T06:00:00"),
+        (datetime(2026, 11, 24, 22), datetime(2026, 11, 25, 6)),
+        # Aware values are converted to UTC.
+        ("2026-11-24T21:00:00Z", "2026-11-25T05:00:00+00:00"),
+        (
+            datetime(2026, 11, 24, 16, tzinfo=timezone(timedelta(hours=-5))),
+            datetime(2026, 11, 25, 0, tzinfo=timezone(timedelta(hours=-5))),
+        ),
+    ],
+)
+def test_create_sleep_window_posts_epoch_ms(writer, start, end):
+    g, calls = writer
+    out = g.create_sleep_window("2026-11-25", start, end)
+    method, url, kw = calls[-1]
+    assert (method, url) == ("POST", "/sleep-service/sleep/dailySleep")
+    assert kw["json"] == _sleep_body()
+    assert out == _sleep_body()
+
+
+def test_update_sleep_window_reads_id_then_puts(writer, monkeypatch):
+    g, calls = writer
+    reads = []
+
+    def fake_get(path, **kw):
+        reads.append((path, kw))
+        return {"dailySleepDTO": {"id": _SLEEP_START_MS, "calendarDate": "2026-11-25"}}
+
+    monkeypatch.setattr(g, "connectapi", fake_get)
+    g.update_sleep_window("2026-11-25", "2026-11-24T22:00:00", "2026-11-25T07:00:00")
+    assert reads == [
+        (
+            "/sleep-service/sleep/dailySleepData",
+            {"params": {"date": "2026-11-25", "nonSleepBufferMinutes": 60}},
+        )
+    ]
+    method, url, kw = calls[-1]
+    assert (method, url) == (
+        "PUT",
+        f"/sleep-service/sleep/dailySleep/{_SLEEP_START_MS}",
+    )
+    assert kw["json"] == _sleep_body(
+        id=_SLEEP_START_MS,
+        sleepEndTimestampGMT=_SLEEP_END_MS + 3600 * 1000,
+        sleepTimeSeconds=9 * 3600,
+    )
+
+
+def test_update_sleep_window_without_sleep_raises(writer, monkeypatch):
+    g, calls = writer
+    monkeypatch.setattr(
+        g, "connectapi", lambda path, **kw: {"dailySleepDTO": {"id": None}}
+    )
+    with pytest.raises(ValueError, match="No sleep"):
+        g.update_sleep_window("2026-11-25", "2026-11-24T22:00", "2026-11-25T06:00")
+    assert calls == []
+
+
+@pytest.mark.parametrize("method", ["create_sleep_window", "update_sleep_window"])
+@pytest.mark.parametrize(
+    ("cdate", "start", "end"),
+    [
+        ("2026-11-31", "2026-11-24T22:00", "2026-11-25T06:00"),
+        ("25-11-2026", "2026-11-24T22:00", "2026-11-25T06:00"),
+        ("2026-11-25", "2026-11-25T06:00", "2026-11-24T22:00"),
+        ("2026-11-25", "2026-11-25T06:00", "2026-11-25T06:00"),
+        ("2026-11-25", "2026-11-24T06:00", "2026-11-25T06:00"),
+        ("2026-11-25", "last night", "2026-11-25T06:00"),
+        ("2026-11-25", 1795554000000, "2026-11-25T06:00"),
+        ("2026-11-25", "2026-11-24T22:00", date(2026, 11, 25)),
+        # cdate is the bedtime day, not the wake-up day
+        ("2026-11-24", "2026-11-24T22:00", "2026-11-25T06:00"),
+    ],
+)
+def test_sleep_window_rejects_bad_input_without_request(
+    writer, monkeypatch, method, cdate, start, end
+):
+    g, calls = writer
+    reads = []
+    monkeypatch.setattr(g, "connectapi", lambda path, **kw: reads.append(path))
+    with pytest.raises(ValueError):
+        getattr(g, method)(cdate, start, end)
+    assert calls == [] and reads == []
+
+
+def test_sleep_window_reloads_missing_profile_id(writer, monkeypatch):
+    g, calls = writer
+    g.profile_id = None
+
+    def fail():
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr(g, "_load_social_profile", fail)
+    with pytest.raises(GarminConnectConnectionError):
+        g.create_sleep_window("2026-11-25", "2026-11-24T22:00", "2026-11-25T06:00")
+
+    def load():
+        g.profile_id = 4242
+
+    monkeypatch.setattr(g, "_load_social_profile", load)
+    g.create_sleep_window("2026-11-25", "2026-11-24T22:00", "2026-11-25T06:00")
+    assert calls[-1][2]["json"]["userProfilePK"] == 4242
+
+
+def test_sleep_note_set_and_delete(writer):
+    g, calls = writer
+    assert g.set_sleep_note("2026-11-25", "Late coffee") == {"userNote": "Late coffee"}
+    assert calls[-1][:2] == ("PUT", "/sleep-service/sleep/dailySleep/2026-11-25/note")
+    assert calls[-1][2]["json"] == {"userNote": "Late coffee"}
+    g.set_sleep_note("2026-11-25", "")
+    assert calls[-1][2]["json"] == {"userNote": ""}
+    assert g.delete_sleep_note("2026-11-25") is None
+    assert calls[-1][:2] == (
+        "DELETE",
+        "/sleep-service/sleep/dailySleep/2026-11-25/note",
+    )
+    assert "json" not in calls[-1][2]
+
+
+@pytest.mark.parametrize(
+    ("call", "args"),
+    [
+        ("set_sleep_note", ("2026-11-25", None)),
+        ("set_sleep_note", ("2026-11-25", 5)),
+        ("set_sleep_note", ("2026/11/25", "x")),
+        ("delete_sleep_note", ("2026-02-30",)),
+    ],
+)
+def test_sleep_note_rejects_bad_input_without_request(writer, call, args):
+    g, calls = writer
+    with pytest.raises(ValueError):
+        getattr(g, call)(*args)
+    assert calls == []

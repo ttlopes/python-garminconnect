@@ -262,6 +262,19 @@ menu_categories = {
                 "key": "get_week_average_resting_hr",
             },
             "k": {"desc": "Fitness age details (v2)", "key": "get_fitness_age_details"},
+            "l": {
+                "desc": "Add a sleep window (interactive)",
+                "key": "create_sleep_window",
+            },
+            "m": {
+                "desc": "Edit a day's sleep times (interactive)",
+                "key": "update_sleep_window",
+            },
+            "n": {"desc": "Set a sleep note (interactive)", "key": "set_sleep_note"},
+            "o": {
+                "desc": "Delete a sleep note (interactive)",
+                "key": "delete_sleep_note",
+            },
         },
     },
     "3": {
@@ -5055,6 +5068,95 @@ def delete_jetlag_trip_entry(api: Garmin) -> None:
         print(f"❌ Error deleting jet lag trip: {e}")
 
 
+def _ask_sleep_window() -> tuple[str, str, str]:
+    """Ask for the wake-up day and the bed and wake times of a sleep window."""
+    cdate = input(f"Wake-up day (YYYY-MM-DD) [{_today()}]: ").strip() or _today()
+    day = datetime.date.fromisoformat(cdate)
+    default_start = f"{(day - datetime.timedelta(days=1)).isoformat()}T23:00:00"
+    default_end = f"{cdate}T07:00:00"
+    print("Times are your Garmin timezone unless they carry an offset.")
+    start = input(f"Bed time [{default_start}]: ").strip() or default_start
+    end = input(f"Wake time [{default_end}]: ").strip() or default_end
+    return cdate, start, end
+
+
+def create_sleep_window_entry(api: Garmin) -> None:
+    """Add a sleep window after a y/N confirmation (it cannot be deleted)."""
+    try:
+        cdate, start, end = _ask_sleep_window()
+        print("⚠️ Garmin has no way to delete a sleep entry, only to edit it.")
+        answer = input(f"Add sleep {start} to {end} on {cdate}? (y/N): ")
+        if answer.strip().lower() != "y":
+            print("❌ Cancelled")
+            return
+        call_and_display(
+            api.create_sleep_window,
+            cdate,
+            start,
+            end,
+            method_name="create_sleep_window",
+            api_call_desc=f"api.create_sleep_window('{cdate}', '{start}', '{end}')",
+        )
+    except Exception as e:
+        print(f"❌ Error adding sleep window: {e}")
+
+
+def update_sleep_window_entry(api: Garmin) -> None:
+    """Change a day's bed and wake time after a y/N confirmation."""
+    try:
+        cdate, start, end = _ask_sleep_window()
+        answer = input(f"Change sleep on {cdate} to {start} - {end}? (y/N): ")
+        if answer.strip().lower() != "y":
+            print("❌ Cancelled")
+            return
+        call_and_display(
+            api.update_sleep_window,
+            cdate,
+            start,
+            end,
+            method_name="update_sleep_window",
+            api_call_desc=f"api.update_sleep_window('{cdate}', '{start}', '{end}')",
+        )
+    except Exception as e:
+        print(f"❌ Error updating sleep window: {e}")
+
+
+def set_sleep_note_entry(api: Garmin) -> None:
+    """Set the note on a day's sleep after a y/N confirmation."""
+    try:
+        cdate = input(f"Day (YYYY-MM-DD) [{_today()}]: ").strip() or _today()
+        note = input("Sleep note: ").strip()
+        if input(f"Set the sleep note on {cdate}? (y/N): ").strip().lower() != "y":
+            print("❌ Cancelled")
+            return
+        call_and_display(
+            api.set_sleep_note,
+            cdate,
+            note,
+            method_name="set_sleep_note",
+            api_call_desc=f"api.set_sleep_note('{cdate}', {note!r})",
+        )
+    except Exception as e:
+        print(f"❌ Error setting sleep note: {e}")
+
+
+def delete_sleep_note_entry(api: Garmin) -> None:
+    """Remove the note from a day's sleep after a y/N confirmation."""
+    try:
+        cdate = input(f"Day (YYYY-MM-DD) [{_today()}]: ").strip() or _today()
+        if input(f"Delete the sleep note on {cdate}? (y/N): ").strip().lower() != "y":
+            print("❌ Cancelled")
+            return
+        call_and_display(
+            api.delete_sleep_note,
+            cdate,
+            method_name="delete_sleep_note",
+            api_call_desc=f"api.delete_sleep_note('{cdate}')",
+        )
+    except Exception as e:
+        print(f"❌ Error deleting sleep note: {e}")
+
+
 def set_blood_pressure_data(api: Garmin) -> None:
     """Set blood pressure (and pulse) data."""
     try:
@@ -6109,6 +6211,10 @@ def execute_api_call(api: Garmin, key: str) -> None:
             ),
             "get_daily_sleep": _web(api, "get_daily_sleep"),
             "get_naps": _web(api, "get_naps"),
+            "create_sleep_window": lambda: create_sleep_window_entry(api),
+            "update_sleep_window": lambda: update_sleep_window_entry(api),
+            "set_sleep_note": lambda: set_sleep_note_entry(api),
+            "delete_sleep_note": lambda: delete_sleep_note_entry(api),
             "get_sleep_stats_weekly": _web(
                 api, "get_sleep_stats_weekly", kwargs_fn=lambda: {"weeks": 12}
             ),

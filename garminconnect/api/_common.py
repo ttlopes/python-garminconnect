@@ -33,6 +33,7 @@ _STATUS_CODE_RE = re.compile(r"(?:API Error|Error|HTTP)\s*(\d{3})")
 # Constants for validation
 MAX_ACTIVITY_LIMIT = 1000
 MAX_HYDRATION_ML = 10000  # 10 liters
+MAX_SLEEP_WINDOW_MS = 24 * 60 * 60 * 1000  # a sleep window is under 24 hours
 # Safety cap on server-driven pagination loops (get_activities_by_date,
 # get_goals). Termination of those loops otherwise depends entirely on the
 # server eventually returning an empty page, so a hostile/broken server could

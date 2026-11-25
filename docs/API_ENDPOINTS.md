@@ -114,6 +114,9 @@ Not added: `/metrics-service/metrics/eventracetimeprojections/{eventId}/{d1}/{d2
 | `get_naps(cdate=None, include_overlaps=True)` | `GET /sleep-service/sleep/naps/{date}?includeOverlaps` | | yes (empty) |
 | `get_sleep_stats_weekly(end=None, weeks=52)` | `GET /sleep-service/stats/sleep/weekly/{end}/{weeks}` | | yes |
 | `get_sleep_stats_overall(start, end)` | `GET /sleep-service/stats/sleep/overall/{start}/{end}` | | yes |
+| `create_sleep_window(cdate, sleep_start, sleep_end)` | `POST /sleep-service/sleep/dailySleep` `{"calendarDate", "sleepStartTimestampGMT", "sleepEndTimestampGMT", "sleepTimeSeconds", "napTimeSeconds": 0, "sleepWindowConfirmed": true, "userProfilePK", "sleepWindowConfirmationType": "manually_confirmed"}` | "Add Manual Sleep". `calendarDate` is the wake-up day; timestamps are epoch ms, naive times are the user's Garmin timezone. The web app's body was not captured: this one, built like the captured `PUT` without `id`, was verified through the library. Read back, `id` equals the start timestamp. A sleep entry cannot be deleted (`DELETE /sleep-service/sleep/dailySleep/{id}` answers 405). | yes |
+| `update_sleep_window(cdate, sleep_start, sleep_end)` | `PUT /sleep-service/sleep/dailySleep/{id}` with the same body plus `"id"` | "Edit Sleep Times". `{id}` is read from `get_daily_sleep(cdate)`. Verified changing the wake time; moving the start time and editing a watch-recorded sleep were not tried. | yes |
+| `set_sleep_note(cdate, note)` / `delete_sleep_note(cdate)` | `PUT`/`DELETE /sleep-service/sleep/dailySleep/{date}/note` `{"userNote"}` | `PUT` echoes the body, `DELETE` answers 204. `GET` on this path answers 405; read the note from `dailySleepDTO.userNote` of `get_sleep_data`/`get_daily_sleep`. | yes |
 
 ## Health Snapshot (`wellnessactivity-service`)
 
