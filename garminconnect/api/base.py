@@ -1065,7 +1065,10 @@ class GarminBase:
         ``{"consentTypeId": "DI_CONNECT_UPLOAD", "clientIndicator": false,
         "consentLocale", "consentVersion"}``, which is what the web app's
         "Do Not Agree" sends. The reply seen was ``consentState: "REVOKED"``
-        with ``deleteStatus: "NOT_REQUIRED"``: no data was deleted. Writes
+        with ``deleteStatus: "NOT_REQUIRED"``: no data was deleted. It only
+        works while consent has not been granted; once it has, Garmin answers
+        406 "Deletion Prompt Required", because withdrawing granted consent
+        deletes the account's data, which this library does not offer. Writes
         such as uploads may be refused afterwards; ``grant_upload_consent()``
         undoes it. Without ``consent_version`` the current version is read from
         ``get_consent_text()``. It does not change the device upload preference

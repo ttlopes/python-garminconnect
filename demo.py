@@ -5363,7 +5363,8 @@ def upload_consent_data(api: Garmin, grant: bool) -> None:
         if not grant:
             print(
                 "Declining sends the web app's 'Do Not Agree': no data is "
-                "deleted, but uploads may be refused until consent is granted."
+                "deleted, but uploads may be refused until consent is granted. "
+                "Garmin refuses it (406) once consent has been granted."
             )
         action = "Grant" if grant else "Decline"
         if input(f"{action} upload consent? (y/N): ").strip().lower() != "y":
