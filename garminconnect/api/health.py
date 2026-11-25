@@ -523,7 +523,12 @@ class HealthMixin(GarminBase):
         Logs only appear in :meth:`get_lifestyle_logging_data` for behaviors
         tracked on that date. Returns the request body as Garmin echoes it.
         """
-        behavior_ids = _validate_id_list(behavior_ids, "behavior_ids", allow_empty=True)
+        # dict.fromkeys drops repeated ids and keeps the order.
+        behavior_ids = list(
+            dict.fromkeys(
+                _validate_id_list(behavior_ids, "behavior_ids", allow_empty=True)
+            )
+        )
         cdate = self._date_or_today(cdate)
         payload = {
             "trackedBehaviours": behavior_ids,
@@ -553,7 +558,9 @@ class HealthMixin(GarminBase):
         ``updateTimestamp`` (local time). For a ``QUANTITY`` behavior pass
         ``amount``, or ``sub_type_amounts`` as ``{subTypeId: amount}`` for one
         with sub-types (Alcohol, caffeine). Amounts are integers from 1 to 25.
-        Garmin answers with an empty body.
+        Garmin answers with an empty body. The entry only shows in
+        :meth:`get_lifestyle_logging_data` if the behavior is tracked on that
+        date (see :meth:`set_tracked_lifestyle_behaviors`).
         """
         behavior_id = _coerce_positive_id(behavior_id, "behavior_id")
         cdate = _validate_date_format(cdate, "cdate")
@@ -569,14 +576,18 @@ class HealthMixin(GarminBase):
         elif sub_type_amounts is not None:
             if not isinstance(sub_type_amounts, dict) or not sub_type_amounts:
                 raise ValueError("sub_type_amounts must be a non-empty dict")
-            details = [
-                {
-                    "subTypeId": _coerce_positive_id(sub_type_id, "subTypeId"),
-                    "subTypeName": "",
-                    "amount": _validate_lifestyle_amount(value),
-                }
-                for sub_type_id, value in sub_type_amounts.items()
-            ]
+            details = []
+            for key, value in sub_type_amounts.items():
+                sub_type_id = _coerce_positive_id(key, "subTypeId")
+                if any(d["subTypeId"] == sub_type_id for d in details):
+                    raise ValueError(f"sub-type {sub_type_id} is given more than once")
+                details.append(
+                    {
+                        "subTypeId": sub_type_id,
+                        "subTypeName": "",
+                        "amount": _validate_lifestyle_amount(value),
+                    }
+                )
         now = self.now()
         payload: dict[str, Any] = {
             "logStatus": "YES" if logged else "NO",
@@ -594,7 +605,8 @@ class HealthMixin(GarminBase):
         """Remove a day's log entry for a lifestyle behavior.
 
         DELETE /lifestylelogging-service/dailyLog/{behaviourId}/{date}. Garmin
-        answers with an empty body.
+        answers with an empty body. While the behavior is tracked, the daily
+        log still lists it afterwards, without a ``logStatus``.
         """
         behavior_id = _coerce_positive_id(behavior_id, "behavior_id")
         cdate = _validate_date_format(cdate, "cdate")
@@ -674,7 +686,11 @@ class HealthMixin(GarminBase):
                 if measurement_type is None
                 else measurement_type
             ),
-            current.get("sleepRelated") if sleep_related is None else sleep_related,
+            (
+                bool(current.get("sleepRelated"))
+                if sleep_related is None
+                else sleep_related
+            ),
             "behavior",
         )
         url = f"{self.garmin_connect_lifestyle_behaviors_url}/{behavior_id}"
@@ -709,7 +725,8 @@ class HealthMixin(GarminBase):
 
         PUT /userpreference-service/lifestyle.auto-logging.enabled with
         ``{"key": "lifestyle.auto-logging.enabled", "value": "true"|"false"}``.
-        When on, Garmin logs the exercise behaviors from recorded activities.
+        It is the setting behind automatic logging of the exercise behaviors
+        from recorded activities; that effect itself was not observed.
         Returns the request body as Garmin echoes it.
         """
         if not isinstance(enabled, bool):

@@ -450,7 +450,7 @@ def test_lifestyle_reads(api):
 
 def test_set_tracked_lifestyle_behaviors(writer, monkeypatch):
     g, calls = writer
-    g.set_tracked_lifestyle_behaviors([3, "7"])
+    g.set_tracked_lifestyle_behaviors([3, "7", 3])
     assert calls[-1][:2] == ("PUT", "/lifestylelogging-service/trackedBehaviours")
     assert calls[-1][2]["json"] == {
         "trackedBehaviours": [3, 7],
@@ -499,6 +499,7 @@ def test_log_lifestyle_behavior(writer, monkeypatch):
         {"sub_type_amounts": {1: 100}},
         {"sub_type_amounts": {}},
         {"sub_type_amounts": {0: 1}},
+        {"sub_type_amounts": {1: 1, "1": 2}},
         {"amount": 1, "sub_type_amounts": {1: 1}},
         {"logged": False, "amount": 1},
         {"logged": "yes"},
@@ -527,7 +528,7 @@ def test_create_lifestyle_behaviors(writer):
     g, calls = writer
     g.create_lifestyle_behaviors(
         [
-            {"name": "Stretching"},
+            {"name": " Stretching "},
             {"name": "Glasses", "measurement_type": "QUANTITY", "sleep_related": True},
         ]
     )

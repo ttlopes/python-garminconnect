@@ -446,7 +446,7 @@ def _lifestyle_behavior_body(
     if not isinstance(sleep_related, bool):
         raise ValueError(f"{label} sleep_related must be a bool")
     return {
-        "name": name,
+        "name": name.strip(),
         "measurementType": measurement_type,
         "sleepRelated": sleep_related,
     }
