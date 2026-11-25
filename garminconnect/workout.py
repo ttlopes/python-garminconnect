@@ -48,6 +48,7 @@ class SportType:
     HIIT = 9
     MULTI_SPORT = 10
     MOBILITY = 11
+    RUCKING = 13
 
 
 # Step Type IDs — from /workout-service/workout/types

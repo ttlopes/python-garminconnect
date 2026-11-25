@@ -82,6 +82,7 @@ def test_sport_type_ids() -> None:
     assert SportType.HIIT == 9
     assert SportType.MULTI_SPORT == 10
     assert SportType.MOBILITY == 11
+    assert SportType.RUCKING == 13
 
 
 def test_swimming_workout_uses_expected_sport_type_id() -> None:
