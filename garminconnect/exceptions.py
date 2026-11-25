@@ -24,10 +24,11 @@ class GarminConnectNotFoundError(GarminConnectConnectionError):
 class GarminConnectConsentRequiredError(GarminConnectConnectionError):
     """Raised when Garmin refuses a request with HTTP 412 Precondition Failed.
 
-    Garmin refuses the request because the account has not granted upload
-    consent; this was seen on every account tested. ``reason_code`` is the
-    ``reasonCode`` from Garmin's reply: 1 when the account owner declined, 2
-    when they never answered, or None when the reply has no such number.
+    Every 412 raises it. The only 412 seen from Garmin is the refusal of a
+    write because the account has not granted upload consent, on every account
+    tested. ``reason_code`` is the ``reasonCode`` from Garmin's reply: 1 when
+    the account owner declined, 2 when they never answered, or None when the
+    reply has no such number (then the 412 may not be about consent).
     Grant consent with ``grant_upload_consent()`` (or by agreeing in Garmin
     Connect) and check it with ``has_upload_consent()``.
 

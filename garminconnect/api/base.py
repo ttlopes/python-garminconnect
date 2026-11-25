@@ -989,8 +989,9 @@ class GarminBase:
     def has_upload_consent(self) -> bool:
         """Return True when the account owner has granted upload consent.
 
-        Granted means ``userOption`` is ``"opt-in"``; a never-granted record
-        has ``"opt-out"``.
+        Granted means ``userOption`` is ``"opt-in"``. ``"opt-out"`` is either
+        never answered (``sourceType: "DEFAULT"``) or declined
+        (``sourceType: "CUSTOMER"``).
         """
         record = self.get_upload_consent()
         return isinstance(record, dict) and record.get("userOption") == "opt-in"

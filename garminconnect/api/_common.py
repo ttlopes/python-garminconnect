@@ -546,7 +546,9 @@ def _handle_api_errors(
 
     Translates transport-level exceptions to domain-specific
     ``GarminConnectAuthenticationError`` (401), ``GarminConnectTooManyRequestsError``
-    (429) or ``GarminConnectConnectionError`` (all other HTTP / network failures),
+    (429), ``GarminConnectNotFoundError`` (404),
+    ``GarminConnectConsentRequiredError`` (412) or
+    ``GarminConnectConnectionError`` (all other HTTP / network failures),
     preserving the original ``.response`` where available so callers can still
     introspect the underlying response.
 
