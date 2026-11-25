@@ -11,7 +11,7 @@ page.
 
 ### Changed
 
-- **The strength-exercise catalog now has 1,830 exercises in 53 categories, each verified against Garmin**: every name was uploaded in a strength workout on a test account and kept only if Garmin stored it unchanged. New are, among others, yoga poses (`POSE`), pilates and mobility moves (`MOVE`), `INDOOR_ROW`, `STRETCH` and `UNKNOWN`. Each category also has a category-only entry (`exercise: ""`), so the old generic names such as `resolve("Cardio")` keep working. `Barbell Shoulder Press` (`SHOULDER_PRESS`/`BARBELL_SHOULDER_PRESS`) was removed: Garmin stores that name as empty.
+- **The strength-exercise catalog now has 1,830 exercises in 53 categories, each verified against Garmin**: every name was uploaded in a strength workout on a test account and kept only if Garmin stored it unchanged. New are, among others, yoga poses (`POSE`), pilates and mobility moves (`MOVE`), `INDOOR_ROW`, `STRETCH` and `UNKNOWN`. Each category also has a category-only entry (`exercise: ""`), so the old generic names such as `resolve("Cardio")` keep working. `Barbell Shoulder Press` (`SHOULDER_PRESS`/`BARBELL_SHOULDER_PRESS`) was removed: Garmin stores that name as empty. Each exercise now also carries its primary and secondary muscles (17 groups, Garmin's typos such as `ADBUCTORS` normalised) and equipment (33 types), taken from the workout editor's own data, with `by_muscle()` and `by_equipment()` to filter on them.
 
 ### Development
 

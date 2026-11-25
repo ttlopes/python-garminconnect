@@ -47,9 +47,7 @@ def test_parse_keeps_unclosed_items_separate(gen):
         '<li data-category-key="X" data-exercise-key="Y">'
         "<span>user@example.com</span></li>"
     )
-    assert rows == [
-        {"name": "user@example.com", "category": "X", "exercise": "Y"}
-    ]
+    assert rows == [{"name": "user@example.com", "category": "X", "exercise": "Y"}]
 
 
 def test_main_refuses_suspect_names(gen, tmp_path, monkeypatch, capsys):
@@ -294,7 +292,9 @@ def test_verify_drops_rejected_categories_and_blanked_names(gen):
         _cands(("SQUAT", "BACK_SQUAT"), ("SQUAT", "FAKE"), ("BOGUS", "THING")),
     )
     assert valid == ["SQUAT", "PLANK"]
-    assert rows == [{"category": "SQUAT", "exercise": "BACK_SQUAT", "label": "back_squat"}]
+    assert rows == [
+        {"category": "SQUAT", "exercise": "BACK_SQUAT", "label": "back_squat"}
+    ]
     # Every created workout was deleted again.
     assert api.workouts == {}
     assert v.created == v.deleted == len(api.deleted)
@@ -338,7 +338,8 @@ def test_verify_bisects_a_rejected_batch(gen):
 
     api = PickyApi({"CORE"}, {"CORE": {"A", "B", "C"}})
     _, rows = _verifier(gen, api).run(
-        ["CORE"], _cands(("CORE", "A"), ("CORE", "POISON"), ("CORE", "B"), ("CORE", "C"))
+        ["CORE"],
+        _cands(("CORE", "A"), ("CORE", "POISON"), ("CORE", "B"), ("CORE", "C")),
     )
     assert sorted(r["exercise"] for r in rows) == ["A", "B", "C"]
     assert api.workouts == {}
@@ -667,7 +668,11 @@ def test_category_rows_keep_old_generic_names(gen):
         ("PLANK", ""): "Plank (any)",  # category-only row of a new catalog
         ("BANDED_EXERCISES", "BANDED_EXERCISES"): "Banded Exercises",
     }
-    labels = {"CARDIO": "Cardio label", "STRETCH": "Stretch", "BANDED_EXERCISES": "Bands"}
+    labels = {
+        "CARDIO": "Cardio label",
+        "STRETCH": "Stretch",
+        "BANDED_EXERCISES": "Bands",
+    }
     rows, skipped = gen.category_rows(
         ["CARDIO", "PLANK", "STRETCH", "UNKNOWN", "BANDED_EXERCISES"],
         previous,
@@ -752,7 +757,9 @@ def test_rows_from_cache_refuses_untested_candidates(gen):
         gen.rows_from_cache(cache, props)
 
 
-def test_from_cache_writes_catalog_without_logging_in(gen, tmp_path, monkeypatch, capsys):
+def test_from_cache_writes_catalog_without_logging_in(
+    gen, tmp_path, monkeypatch, capsys
+):
     import garminconnect
 
     def no_login(*a, **k):
@@ -815,8 +822,24 @@ def test_from_cache_needs_cache(gen, tmp_path):
     with pytest.raises(SystemExit, match="only one"):
         gen.main(["--from-cache", "--verify", "--properties", str(src)])
 
+
 def test_render_escapes_non_ascii_labels(gen):
     label = "Hero\u2019s Pose"
     source = gen.render([{"name": label, "category": "POSE", "exercise": "HEROS"}])
     assert source.isascii()
     assert _load_rendered(source).resolve(label)["exercise"] == "HEROS"
+
+
+def test_metadata_normalises_garmin_muscle_typos(gen, tmp_path):
+    (tmp_path / "Exercises.json").write_text(
+        '{"categories": {"LUNGE": {"exercises": {"SIDE_LUNGE": {'
+        '"primaryMuscles": ["ADBUCTORS", "ADDDUCTORS", ""],'
+        '"secondaryMuscles": ["SHOULDER", "shoulders"]}}}}}',
+        encoding="utf-8",
+    )
+    meta = gen.load_metadata(tmp_path)
+    assert meta[("LUNGE", "SIDE_LUNGE")]["primary_muscles"] == [
+        "ABDUCTORS",
+        "ADDUCTORS",
+    ]
+    assert meta[("LUNGE", "SIDE_LUNGE")]["secondary_muscles"] == ["SHOULDERS"]

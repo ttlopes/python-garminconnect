@@ -635,6 +635,25 @@ def _str_list(value: Any) -> list[str]:
     return [v for v in value if isinstance(v, str)]
 
 
+# Garmin's own muscle data has typos and a singular/plural pair; map them to
+# one spelling so filtering by muscle finds every exercise.
+MUSCLE_ALIASES = {
+    "ADBUCTORS": "ABDUCTORS",
+    "ADDDUCTORS": "ADDUCTORS",
+    "SHOULDER": "SHOULDERS",
+}
+
+
+def _muscles(value: Any) -> list[str]:
+    """Normalised, de-duplicated muscle keys (empty strings dropped)."""
+    out: list[str] = []
+    for m in _str_list(value):
+        key = MUSCLE_ALIASES.get(m.strip().upper(), m.strip().upper())
+        if key and key not in out:
+            out.append(key)
+    return out
+
+
 def load_metadata(directory: str | Path) -> dict[tuple[str, str], dict[str, list[str]]]:
     """Read muscles/equipment from saved ``Exercises.json`` and/or
     ``exerciseToEquipments.json`` files in ``directory``.
@@ -661,8 +680,8 @@ def load_metadata(directory: str | Path) -> dict[tuple[str, str], dict[str, list
                 e = entry(group.get("exerciseCategoryKey"), ex.get("exerciseKey"))
                 if e is None:
                     continue
-                e["primary_muscles"] = _str_list(ex.get("primaryMuscles"))
-                e["secondary_muscles"] = _str_list(ex.get("secondaryMuscles"))
+                e["primary_muscles"] = _muscles(ex.get("primaryMuscles"))
+                e["secondary_muscles"] = _muscles(ex.get("secondaryMuscles"))
                 e["equipment"] = _str_list(ex.get("equipmentKeys"))
 
     # Exercises.json is the web app's main muscle source: it wins for muscles.
@@ -677,9 +696,9 @@ def load_metadata(directory: str | Path) -> dict[tuple[str, str], dict[str, list
                 if e is None or not isinstance(info, dict):
                     continue
                 if "primaryMuscles" in info:
-                    e["primary_muscles"] = _str_list(info["primaryMuscles"])
+                    e["primary_muscles"] = _muscles(info["primaryMuscles"])
                 if "secondaryMuscles" in info:
-                    e["secondary_muscles"] = _str_list(info["secondaryMuscles"])
+                    e["secondary_muscles"] = _muscles(info["secondaryMuscles"])
 
     if not eq_file.exists() and not ex_file.exists():
         raise FileNotFoundError(f"neither of {METADATA_FILES} found in {d}")
