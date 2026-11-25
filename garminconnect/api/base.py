@@ -22,6 +22,7 @@ from ..exceptions import (
     GarminConnectTooManyRequestsError,
 )
 from ._common import (
+    VALID_CONSENT_FEATURE_TYPES,
     _coerce_positive_id,
     _handle_api_errors,
     _is_legacy_garth_tokenstore,
@@ -362,6 +363,7 @@ class GarminBase:
             "/privacysettings-service/privacy-settings"
         )
         self.garmin_connect_jetlag_url = "/jetlag-service/jetlag"
+        self.garmin_connect_consent_feature_url = "/gdprconsent-service/feature"
         self.garmin_connect_ecg_url = (
             f"https://ghs.{'garmin.cn' if is_cn else 'garmin.com'}/ghs/ecg/v1/ecg"
         )
@@ -949,6 +951,40 @@ class GarminBase:
         url = f"{self.garmin_connect_web_gateway_url}/snapshot/usageIndicators"
         logger.debug("Requesting usage indicators")
         return self.connectapi(url)
+
+    def get_consent_feature(self, feature_type: str) -> dict[str, Any]:
+        """Return the account's consent record for one feature.
+
+        GET /gdprconsent-service/feature/{featureType}, where ``feature_type`` is
+        UPLOAD, INSIGHTS, ADAPTIVE_TRAINING_PLAN, PRODUCT_IMPROVEMENT_DATA_USAGE,
+        AUTO_ACTIVITY_DETECTION, POPULARITY_ROUTING or CONNECT_AUTO_APPROVE_FOLLOWER.
+        """
+        if not isinstance(feature_type, str):
+            raise ValueError("feature_type must be a string")
+        feature_type = feature_type.strip().upper()
+        if feature_type not in VALID_CONSENT_FEATURE_TYPES:
+            raise ValueError(
+                f"feature_type must be one of {sorted(VALID_CONSENT_FEATURE_TYPES)}"
+            )
+        url = f"{self.garmin_connect_consent_feature_url}/{feature_type}"
+        logger.debug("Requesting consent feature %s", feature_type)
+        return self.connectapi(url)
+
+    def get_upload_consent(self) -> dict[str, Any]:
+        """Return the account's upload consent record.
+
+        GET /gdprconsent-service/feature/UPLOAD.
+        """
+        return self.get_consent_feature("UPLOAD")
+
+    def has_upload_consent(self) -> bool:
+        """Return True when the account owner has granted upload consent.
+
+        Granted means ``userOption`` is ``"opt-in"``; a never-granted record
+        has ``"opt-out"``.
+        """
+        record = self.get_upload_consent()
+        return isinstance(record, dict) and record.get("userOption") == "opt-in"
 
     def logout(self, tokenstore: str | None = None) -> None:
         """Clear in-memory auth state and any cached tokens on disk.

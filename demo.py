@@ -194,6 +194,12 @@ menu_categories = {
             "6": {"desc": "User profile base", "key": "get_user_profile_base"},
             "7": {"desc": "Privacy settings", "key": "get_privacy_settings"},
             "8": {"desc": "Account usage indicators", "key": "get_usage_indicators"},
+            "9": {"desc": "Consent record for a feature", "key": "get_consent_feature"},
+            "a": {"desc": "Upload consent record", "key": "get_upload_consent"},
+            "b": {
+                "desc": "Has upload consent been granted",
+                "key": "has_upload_consent",
+            },
         },
     },
     "2": {
@@ -6174,6 +6180,15 @@ def execute_api_call(api: Garmin, key: str) -> None:
             "get_personal_information": _web(api, "get_personal_information"),
             "get_user_profile_base": _web(api, "get_user_profile_base"),
             "get_privacy_settings": _web(api, "get_privacy_settings"),
+            "get_consent_feature": _web(
+                api,
+                "get_consent_feature",
+                lambda: (
+                    input("Feature type (default: UPLOAD): ").strip() or "UPLOAD",
+                ),
+            ),
+            "get_upload_consent": _web(api, "get_upload_consent"),
+            "has_upload_consent": _web(api, "has_upload_consent"),
             "get_jetlag_status": _web(api, "get_jetlag_status"),
             "get_gear_list": _web(api, "get_gear_list"),
             "get_gear_types": _web(api, "get_gear_types"),

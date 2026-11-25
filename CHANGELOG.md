@@ -7,6 +7,12 @@ Numbers in parentheses refer to GitHub issues and pull requests. Releases before
 0.3.10 are described on the [GitHub Releases](https://github.com/cyberjunky/python-garminconnect/releases)
 page.
 
+## [Unreleased]
+
+### Added
+
+- **Upload consent can be checked**: new `get_consent_feature(feature_type)` reads one of the account's consent records (`GET /gdprconsent-service/feature/{featureType}`), `get_upload_consent()` reads the `UPLOAD` record, and `has_upload_consent()` returns True only when its `userOption` is `opt-in`. On EU accounts Garmin enforces upload consent, which the account owner grants in Garmin Connect.
+
 ## [0.3.20] - 2026-10-23
 
 ### Added

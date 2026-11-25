@@ -60,6 +60,19 @@ VALID_WORKOUT_ORDER_BY = frozenset(
         "WORKOUT_PROVIDER",
     }
 )
+# Consent feature types the web app requests from
+# gdprconsent-service/feature/{featureType}
+VALID_CONSENT_FEATURE_TYPES = frozenset(
+    {
+        "ADAPTIVE_TRAINING_PLAN",
+        "AUTO_ACTIVITY_DETECTION",
+        "CONNECT_AUTO_APPROVE_FOLLOWER",
+        "INSIGHTS",
+        "POPULARITY_ROUTING",
+        "PRODUCT_IMPROVEMENT_DATA_USAGE",
+        "UPLOAD",
+    }
+)
 # Series accepted by usersummary-service/stats/daily?statsType=
 VALID_DAILY_STATS_TYPES = frozenset({"STEPS", "PUSHES", "CALORIES"})
 VALID_MENSTRUAL_FLOW = frozenset({"LIGHT", "MEDIUM", "HEAVY"})

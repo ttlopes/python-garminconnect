@@ -192,6 +192,34 @@ def test_ecg_uses_ghs_host(api):
         g.get_ecg("../etc")
 
 
+def test_consent_feature_path_and_rejected_types(api):
+    g, rec = api
+    g.get_consent_feature("insights")
+    assert _last(rec)[1] == "/gdprconsent-service/feature/INSIGHTS"
+    g.get_upload_consent()
+    assert _last(rec)[1] == "/gdprconsent-service/feature/UPLOAD"
+    for bad in ("DEVICE_UPLOAD", "../UPLOAD", "UPLOAD/x", "", None):
+        with pytest.raises(ValueError):
+            g.get_consent_feature(bad)
+
+
+@pytest.mark.parametrize(
+    ("option", "source", "granted"),
+    [("opt-in", "CUSTOMER", True), ("opt-out", "DEFAULT", False)],
+)
+def test_has_upload_consent_needs_opt_in(api, option, source, granted):
+    g, rec = api
+    rec.result = {
+        "featureType": "UPLOAD",
+        "userOption": option,
+        "sourceType": source,
+        "consentTypeId": "DI_CONNECT_UPLOAD",
+        "consentEnforcementState": "HARD",
+        "deleteStatus": "NOT_APPLICABLE",
+    }
+    assert g.has_upload_consent() is granted
+
+
 def test_client_accepts_only_garmin_hosts_for_absolute_urls():
     from garminconnect.client import Client
 

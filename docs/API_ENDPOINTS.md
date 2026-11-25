@@ -186,6 +186,8 @@ feature get a 404.
 | `get_user_profile_base()` | `GET /userprofile-service/userprofile/userProfileBase` | | yes |
 | `get_privacy_settings()` | `GET /privacysettings-service/privacy-settings` | | yes |
 | `get_usage_indicators()` | `GET /web-gateway/snapshot/usageIndicators` | Which features the account's devices support. | yes |
+| `get_consent_feature(feature_type)` | `GET /gdprconsent-service/feature/{featureType}` | Types the web app reads: `UPLOAD`, `INSIGHTS`, `ADAPTIVE_TRAINING_PLAN`, `PRODUCT_IMPROVEMENT_DATA_USAGE`, `AUTO_ACTIVITY_DETECTION`, `POPULARITY_ROUTING`, `CONNECT_AUTO_APPROVE_FOLLOWER`. | no |
+| `get_upload_consent()` / `has_upload_consent()` | `GET /gdprconsent-service/feature/UPLOAD` | Granted only when `userOption` is `opt-in` (`sourceType: CUSTOMER`); a fresh EU account returns `opt-out` (`sourceType: DEFAULT`) with `consentEnforcementState: HARD`. | no |
 | `update_user_settings(settings)` | `PUT /userprofile-service/userprofile/user-settings/` with the settings object | Overlaid on `get_user_profile()`; `userData` merged one level deep. | yes (unchanged object) |
 | `set_primary_training_device(device_id)` | `PUT /userprofile-service/userprofile/user-settings/primary-training-device` `{"deviceId"}` | | yes |
 | `get_jetlag_status(cdate=None)` | `GET /jetlag-service/jetlag/status/daily/{date}` | Empty without a trip. | yes (empty) |
