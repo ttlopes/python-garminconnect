@@ -116,6 +116,11 @@ JETLAG_FLIGHT_KEYS = (
     "destinationTimezone",
     "destinationTimestamp",
 )
+VALID_LIFESTYLE_MEASUREMENT_TYPES = frozenset({"NONE", "QUANTITY"})
+VALID_LIFESTYLE_BEHAVIOR_KEYS = frozenset({"name", "measurement_type", "sleep_related"})
+# Garmin rejects a logged amount outside 1-25 with HTTP 400.
+LIFESTYLE_AMOUNT_MIN = 1
+LIFESTYLE_AMOUNT_MAX = 25
 UTC_OFFSET_REGEX = r"^([+-])(\d{2}):([0-5]\d)$"
 # Real UTC offsets run from -12:00 to +14:00.
 UTC_OFFSET_MIN_MINUTES = -12 * 60
@@ -400,6 +405,51 @@ def _validate_jetlag_flights(flights: list[dict[str, Any]]) -> list[dict[str, An
                 )
         result.append(dict(flight))
     return result
+
+
+def _validate_id_list(
+    values: list[Any], param_name: str = "ids", allow_empty: bool = False
+) -> list[int]:
+    """Validate a list of positive IDs (each checked by `_coerce_positive_id`)."""
+    if not isinstance(values, list | tuple):
+        raise ValueError(f"{param_name} must be a list")
+    if not values and not allow_empty:
+        raise ValueError(f"{param_name} must not be empty")
+    return [_coerce_positive_id(v, f"{param_name}[{i}]") for i, v in enumerate(values)]
+
+
+def _validate_lifestyle_amount(value: int, param_name: str = "amount") -> int:
+    """Validate a lifestyle logging amount: an integer from 1 to 25."""
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not LIFESTYLE_AMOUNT_MIN <= value <= LIFESTYLE_AMOUNT_MAX
+    ):
+        raise ValueError(
+            f"{param_name} must be an integer from {LIFESTYLE_AMOUNT_MIN} to "
+            f"{LIFESTYLE_AMOUNT_MAX}, got: {value!r}"
+        )
+    return value
+
+
+def _lifestyle_behavior_body(
+    name: Any, measurement_type: Any, sleep_related: Any, label: str
+) -> dict[str, Any]:
+    """Validate a lifestyle behavior's fields and return Garmin's body for it."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"{label} name must be a non-empty string")
+    if measurement_type not in VALID_LIFESTYLE_MEASUREMENT_TYPES:
+        raise ValueError(
+            f"{label} measurement_type must be one of "
+            f"{sorted(VALID_LIFESTYLE_MEASUREMENT_TYPES)}, got: {measurement_type!r}"
+        )
+    if not isinstance(sleep_related, bool):
+        raise ValueError(f"{label} sleep_related must be a bool")
+    return {
+        "name": name,
+        "measurementType": measurement_type,
+        "sleepRelated": sleep_related,
+    }
 
 
 def _validate_json_exists(response: requests.Response) -> dict[str, Any] | None:

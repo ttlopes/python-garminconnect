@@ -262,6 +262,42 @@ menu_categories = {
                 "key": "get_week_average_resting_hr",
             },
             "k": {"desc": "Fitness age details (v2)", "key": "get_fitness_age_details"},
+            "l": {
+                "desc": "Get lifestyle behaviors for '{today}'",
+                "key": "get_lifestyle_behaviors",
+            },
+            "m": {
+                "desc": "Set tracked lifestyle behaviors (interactive)",
+                "key": "set_tracked_lifestyle_behaviors",
+            },
+            "n": {
+                "desc": "Log a lifestyle behavior for today (interactive)",
+                "key": "log_lifestyle_behavior",
+            },
+            "o": {
+                "desc": "Clear a lifestyle behavior log for today (interactive)",
+                "key": "clear_lifestyle_behavior_log",
+            },
+            "p": {
+                "desc": "Create a custom lifestyle behavior (interactive)",
+                "key": "create_lifestyle_behaviors",
+            },
+            "q": {
+                "desc": "Rename a custom lifestyle behavior (interactive)",
+                "key": "update_lifestyle_behavior",
+            },
+            "r": {
+                "desc": "Delete a custom lifestyle behavior (interactive)",
+                "key": "delete_lifestyle_behaviors",
+            },
+            "s": {
+                "desc": "Get lifestyle auto-logging setting",
+                "key": "get_lifestyle_auto_logging",
+            },
+            "t": {
+                "desc": "Turn lifestyle auto-logging on or off (interactive)",
+                "key": "set_lifestyle_auto_logging",
+            },
         },
     },
     "3": {
@@ -5055,6 +5091,198 @@ def delete_jetlag_trip_entry(api: Garmin) -> None:
         print(f"❌ Error deleting jet lag trip: {e}")
 
 
+def _pick_lifestyle_behavior(api: Garmin, custom_only: bool = False) -> dict | None:
+    """List lifestyle behaviors and return the one the user picks."""
+    behaviors = [
+        b
+        for b in api.get_lifestyle_behaviors(_today()) or []
+        if not custom_only or str(b.get("category", "")).startswith("CUSTOM")
+    ]
+    return _pick(
+        behaviors,
+        "custom behavior" if custom_only else "behavior",
+        lambda b: (
+            f"{b.get('name')} ({b.get('measurementType')}, "
+            f"tracked={b.get('tracked')}, id {b.get('behaviourId')})"
+        ),
+    )
+
+
+def _confirm(prompt: str) -> bool:
+    """Ask a y/N question; anything but 'y' cancels."""
+    if input(f"{prompt} (y/N): ").strip().lower() == "y":
+        return True
+    print("❌ Cancelled")
+    return False
+
+
+def set_tracked_lifestyle_behaviors_entry(api: Garmin) -> None:
+    """Replace the list of tracked lifestyle behaviors from today on."""
+    try:
+        tracked = [
+            b.get("behaviourId")
+            for b in api.get_lifestyle_behaviors(_today()) or []
+            if b.get("tracked")
+        ]
+        print(f"Currently tracked behavior ids: {tracked}")
+        raw = input("Behavior ids to track, comma separated (empty = none): ")
+        ids = [int(x) for x in raw.replace(" ", "").split(",") if x]
+        if not _confirm(f"Replace the tracked behaviors with {ids}?"):
+            return
+        call_and_display(
+            api.set_tracked_lifestyle_behaviors,
+            ids,
+            method_name="set_tracked_lifestyle_behaviors",
+            api_call_desc=f"api.set_tracked_lifestyle_behaviors({ids})",
+        )
+    except Exception as e:
+        print(f"❌ Error setting tracked behaviors: {e}")
+
+
+def log_lifestyle_behavior_entry(api: Garmin) -> None:
+    """Log a lifestyle behavior for today (yes/no, or an amount)."""
+    try:
+        behavior = _pick_lifestyle_behavior(api)
+        if not behavior:
+            return
+        behavior_id = behavior["behaviourId"]
+        logged = input("Logged as yes? (Y/n): ").strip().lower() != "n"
+        amount = None
+        sub_type_amounts = None
+        if logged and behavior.get("measurementType") == "QUANTITY":
+            if behavior.get("subTypes"):
+                sub_type_amounts = {}
+                for sub in behavior["subTypes"]:
+                    raw = input(f"Amount of {sub.get('name')} (1-25, Enter = 0): ")
+                    if raw.strip():
+                        sub_type_amounts[sub["subTypeId"]] = int(raw)
+                sub_type_amounts = sub_type_amounts or None
+            else:
+                raw = input("Amount (1-25, Enter = none): ").strip()
+                amount = int(raw) if raw else None
+        if not _confirm(f"Log '{behavior.get('name')}' for {_today()}?"):
+            return
+        call_and_display(
+            api.log_lifestyle_behavior,
+            behavior_id,
+            _today(),
+            logged=logged,
+            amount=amount,
+            sub_type_amounts=sub_type_amounts,
+            method_name="log_lifestyle_behavior",
+            api_call_desc=(
+                f"api.log_lifestyle_behavior({behavior_id}, '{_today()}', "
+                f"logged={logged}, amount={amount}, "
+                f"sub_type_amounts={sub_type_amounts})"
+            ),
+        )
+    except Exception as e:
+        print(f"❌ Error logging behavior: {e}")
+
+
+def clear_lifestyle_behavior_log_entry(api: Garmin) -> None:
+    """Remove today's log entry for a lifestyle behavior."""
+    try:
+        behavior = _pick_lifestyle_behavior(api)
+        if not behavior:
+            return
+        behavior_id = behavior["behaviourId"]
+        if not _confirm(f"Clear today's log of '{behavior.get('name')}'?"):
+            return
+        call_and_display(
+            api.clear_lifestyle_behavior_log,
+            behavior_id,
+            _today(),
+            method_name="clear_lifestyle_behavior_log",
+            api_call_desc=(
+                f"api.clear_lifestyle_behavior_log({behavior_id}, '{_today()}')"
+            ),
+        )
+    except Exception as e:
+        print(f"❌ Error clearing behavior log: {e}")
+
+
+def create_lifestyle_behavior_entry(api: Garmin) -> None:
+    """Create one custom lifestyle behavior."""
+    try:
+        name = input("Behavior name: ").strip()
+        quantity = input("Count an amount instead of yes/no? (y/N): ").strip()
+        sleep = input("Sleep related? (y/N): ").strip()
+        behavior = {
+            "name": name,
+            "measurement_type": "QUANTITY" if quantity.lower() == "y" else "NONE",
+            "sleep_related": sleep.lower() == "y",
+        }
+        if not _confirm(f"Create {behavior}?"):
+            return
+        call_and_display(
+            api.create_lifestyle_behaviors,
+            [behavior],
+            method_name="create_lifestyle_behaviors",
+            api_call_desc=f"api.create_lifestyle_behaviors([{behavior}])",
+        )
+    except Exception as e:
+        print(f"❌ Error creating behavior: {e}")
+
+
+def update_lifestyle_behavior_entry(api: Garmin) -> None:
+    """Rename a custom lifestyle behavior."""
+    try:
+        behavior = _pick_lifestyle_behavior(api, custom_only=True)
+        if not behavior:
+            return
+        behavior_id = behavior["behaviourId"]
+        name = input("New name (Enter to cancel): ").strip()
+        if not name or not _confirm(f"Rename '{behavior.get('name')}' to {name!r}?"):
+            return
+        call_and_display(
+            api.update_lifestyle_behavior,
+            behavior_id,
+            name=name,
+            method_name="update_lifestyle_behavior",
+            api_call_desc=f"api.update_lifestyle_behavior({behavior_id}, name={name!r})",
+        )
+    except Exception as e:
+        print(f"❌ Error updating behavior: {e}")
+
+
+def delete_lifestyle_behavior_entry(api: Garmin) -> None:
+    """Delete one custom lifestyle behavior."""
+    try:
+        behavior = _pick_lifestyle_behavior(api, custom_only=True)
+        if not behavior:
+            return
+        behavior_id = behavior["behaviourId"]
+        if not _confirm(f"Delete '{behavior.get('name')}' (ID: {behavior_id})?"):
+            return
+        call_and_display(
+            api.delete_lifestyle_behaviors,
+            [behavior_id],
+            method_name="delete_lifestyle_behaviors",
+            api_call_desc=f"api.delete_lifestyle_behaviors([{behavior_id}])",
+        )
+    except Exception as e:
+        print(f"❌ Error deleting behavior: {e}")
+
+
+def set_lifestyle_auto_logging_entry(api: Garmin) -> None:
+    """Turn lifestyle auto-logging on or off."""
+    try:
+        current = (api.get_lifestyle_auto_logging() or {}).get("value")
+        print(f"Auto-logging is currently: {current}")
+        enabled = input("Turn auto-logging on? (y/N): ").strip().lower() == "y"
+        if not _confirm(f"Set auto-logging to {enabled}?"):
+            return
+        call_and_display(
+            api.set_lifestyle_auto_logging,
+            enabled,
+            method_name="set_lifestyle_auto_logging",
+            api_call_desc=f"api.set_lifestyle_auto_logging({enabled})",
+        )
+    except Exception as e:
+        print(f"❌ Error setting auto-logging: {e}")
+
+
 def set_blood_pressure_data(api: Garmin) -> None:
     """Set blood pressure (and pulse) data."""
     try:
@@ -5565,6 +5793,28 @@ def execute_api_call(api: Garmin, key: str) -> None:
                 method_name="get_lifestyle_logging_data",
                 api_call_desc=f"api.get_lifestyle_logging_data('{config.today.isoformat()}')",
             ),
+            "get_lifestyle_behaviors": lambda: call_and_display(
+                api.get_lifestyle_behaviors,
+                config.today.isoformat(),
+                method_name="get_lifestyle_behaviors",
+                api_call_desc=f"api.get_lifestyle_behaviors('{config.today.isoformat()}')",
+            ),
+            "set_tracked_lifestyle_behaviors": (
+                lambda: set_tracked_lifestyle_behaviors_entry(api)
+            ),
+            "log_lifestyle_behavior": lambda: log_lifestyle_behavior_entry(api),
+            "clear_lifestyle_behavior_log": (
+                lambda: clear_lifestyle_behavior_log_entry(api)
+            ),
+            "create_lifestyle_behaviors": lambda: create_lifestyle_behavior_entry(api),
+            "update_lifestyle_behavior": lambda: update_lifestyle_behavior_entry(api),
+            "delete_lifestyle_behaviors": lambda: delete_lifestyle_behavior_entry(api),
+            "get_lifestyle_auto_logging": lambda: call_and_display(
+                api.get_lifestyle_auto_logging,
+                method_name="get_lifestyle_auto_logging",
+                api_call_desc="api.get_lifestyle_auto_logging()",
+            ),
+            "set_lifestyle_auto_logging": lambda: set_lifestyle_auto_logging_entry(api),
             # Historical Data & Trends
             "get_daily_steps": lambda: call_and_display(
                 api.get_daily_steps,

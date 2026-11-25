@@ -5,11 +5,11 @@ path and query parameters each method sends, which is what matters for
 compatibility with Garmin's undocumented API.
 """
 
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
-from garminconnect import Garmin
+from garminconnect import Garmin, GarminConnectConnectionError
 
 
 class _Recorder:
@@ -436,3 +436,201 @@ def test_update_activity_partial_put(writer):
     }
     with pytest.raises(ValueError):
         g.update_activity(987654, {})
+
+
+def test_lifestyle_reads(api):
+    g, rec = api
+    g.get_lifestyle_behaviors("2026-10-16")
+    assert _last(rec)[1] == "/lifestylelogging-service/behaviours/2026-10-16"
+    g.get_lifestyle_auto_logging()
+    assert _last(rec)[1] == "/userpreference-service/lifestyle.auto-logging.enabled"
+    with pytest.raises(ValueError):
+        g.get_lifestyle_behaviors("16-10-2026")
+
+
+def test_set_tracked_lifestyle_behaviors(writer, monkeypatch):
+    g, calls = writer
+    g.set_tracked_lifestyle_behaviors([3, "7"])
+    assert calls[-1][:2] == ("PUT", "/lifestylelogging-service/trackedBehaviours")
+    assert calls[-1][2]["json"] == {
+        "trackedBehaviours": [3, 7],
+        "calendarDate": "2026-10-16",
+        "userProfilePk": 4242,
+    }
+    g.set_tracked_lifestyle_behaviors([], "2026-10-01")
+    assert calls[-1][2]["json"]["trackedBehaviours"] == []
+    assert calls[-1][2]["json"]["calendarDate"] == "2026-10-01"
+    sent = len(calls)
+    for bad in ("3", [0], [1.5], [True]):
+        with pytest.raises(ValueError):
+            g.set_tracked_lifestyle_behaviors(bad)
+    g.profile_id = None
+    monkeypatch.setattr(g, "_load_social_profile", lambda: None)
+    with pytest.raises(GarminConnectConnectionError):
+        g.set_tracked_lifestyle_behaviors([3])
+    assert len(calls) == sent
+
+
+def test_log_lifestyle_behavior(writer, monkeypatch):
+    g, calls = writer
+    monkeypatch.setattr(g, "now", lambda: datetime(2026, 10, 16, 8, 5, 9, 678900))
+    g.log_lifestyle_behavior(12, "2026-10-16")
+    assert calls[-1][:2] == ("PUT", "/lifestylelogging-service/dailyLog/12/2026-10-16")
+    assert calls[-1][2]["json"] == {
+        "logStatus": "YES",
+        "updateTimestamp": "2026-10-16T08:05:09.6",
+    }
+    g.log_lifestyle_behavior(12, "2026-10-16", logged=False)
+    assert calls[-1][2]["json"]["logStatus"] == "NO"
+    assert "details" not in calls[-1][2]["json"]
+    g.log_lifestyle_behavior(12, "2026-10-16", amount=3)
+    assert calls[-1][2]["json"]["details"] == [{"amount": 3}]
+    g.log_lifestyle_behavior(1, "2026-10-16", sub_type_amounts={1: 2, 3: 25})
+    assert calls[-1][2]["json"]["details"] == [
+        {"subTypeId": 1, "subTypeName": "", "amount": 2},
+        {"subTypeId": 3, "subTypeName": "", "amount": 25},
+    ]
+    sent = len(calls)
+    bad_calls = [
+        {"amount": 0},
+        {"amount": 26},
+        {"amount": 2.0},
+        {"amount": True},
+        {"sub_type_amounts": {1: 100}},
+        {"sub_type_amounts": {}},
+        {"sub_type_amounts": {0: 1}},
+        {"amount": 1, "sub_type_amounts": {1: 1}},
+        {"logged": False, "amount": 1},
+        {"logged": "yes"},
+    ]
+    for kwargs in bad_calls:
+        with pytest.raises(ValueError):
+            g.log_lifestyle_behavior(12, "2026-10-16", **kwargs)
+    with pytest.raises(ValueError):
+        g.log_lifestyle_behavior(12, "2026/10/16")
+    assert len(calls) == sent
+
+
+def test_clear_lifestyle_behavior_log(writer):
+    g, calls = writer
+    assert g.clear_lifestyle_behavior_log(12, "2026-10-16") is None
+    assert calls[-1][:2] == (
+        "DELETE",
+        "/lifestylelogging-service/dailyLog/12/2026-10-16",
+    )
+    with pytest.raises(ValueError):
+        g.clear_lifestyle_behavior_log(-1, "2026-10-16")
+    assert len(calls) == 1
+
+
+def test_create_lifestyle_behaviors(writer):
+    g, calls = writer
+    g.create_lifestyle_behaviors(
+        [
+            {"name": "Stretching"},
+            {"name": "Glasses", "measurement_type": "QUANTITY", "sleep_related": True},
+        ]
+    )
+    assert calls[-1][:2] == ("POST", "/lifestylelogging-service/behaviours/batch")
+    assert calls[-1][2]["json"] == [
+        {"name": "Stretching", "measurementType": "NONE", "sleepRelated": False},
+        {"name": "Glasses", "measurementType": "QUANTITY", "sleepRelated": True},
+    ]
+    bad_inputs = [
+        [],
+        {"name": "x"},
+        ["x"],
+        [{"name": " "}],
+        [{"name": "x", "measurement_type": "COUNT"}],
+        [{"name": "x", "sleep_related": "no"}],
+        [{"name": "x", "measurementType": "NONE"}],
+    ]
+    for bad in bad_inputs:
+        with pytest.raises(ValueError):
+            g.create_lifestyle_behaviors(bad)
+    assert len(calls) == 1
+
+
+_BEHAVIORS = [
+    {
+        "behaviourId": 101,
+        "name": "Stretching",
+        "category": "CUSTOM",
+        "measurementType": "NONE",
+        "sleepRelated": False,
+    },
+    {
+        "behaviourId": 1,
+        "name": "Alcohol",
+        "category": "LIFESTYLE",
+        "measurementType": "QUANTITY",
+        "sleepRelated": False,
+    },
+]
+
+
+def test_update_lifestyle_behavior(writer, monkeypatch):
+    g, calls = writer
+    reads = []
+
+    def fake_get(path, **kw):
+        reads.append(path)
+        return [dict(b) for b in _BEHAVIORS]
+
+    monkeypatch.setattr(g, "connectapi", fake_get)
+    g.update_lifestyle_behavior("101", name="Yoga")
+    assert reads == ["/lifestylelogging-service/behaviours/2026-10-16"]
+    assert calls[-1][:2] == ("PUT", "/lifestylelogging-service/behaviours/101")
+    assert calls[-1][2]["json"] == {
+        "name": "Yoga",
+        "measurementType": "NONE",
+        "sleepRelated": False,
+    }
+    g.update_lifestyle_behavior(101, measurement_type="QUANTITY", sleep_related=True)
+    assert calls[-1][2]["json"] == {
+        "name": "Stretching",
+        "measurementType": "QUANTITY",
+        "sleepRelated": True,
+    }
+    sent = len(calls)
+    with pytest.raises(ValueError):
+        g.update_lifestyle_behavior(101)
+    with pytest.raises(ValueError, match="not found"):
+        g.update_lifestyle_behavior(999, name="x")
+    with pytest.raises(ValueError, match="not a custom"):
+        g.update_lifestyle_behavior(1, name="x")
+    with pytest.raises(ValueError):
+        g.update_lifestyle_behavior(101, measurement_type="COUNT")
+    assert len(calls) == sent
+
+
+def test_delete_lifestyle_behaviors(writer):
+    g, calls = writer
+    g.delete_lifestyle_behaviors([101, "102"])
+    assert calls[-1][:2] == (
+        "DELETE",
+        "/lifestylelogging-service/behaviours/batchDelete",
+    )
+    assert calls[-1][2]["json"] == {"ids": [101, 102]}
+    for bad in ([], 101, ["x"]):
+        with pytest.raises(ValueError):
+            g.delete_lifestyle_behaviors(bad)
+    assert len(calls) == 1
+
+
+def test_set_lifestyle_auto_logging(writer):
+    g, calls = writer
+    g.set_lifestyle_auto_logging(True)
+    assert calls[-1][:2] == (
+        "PUT",
+        "/userpreference-service/lifestyle.auto-logging.enabled",
+    )
+    assert calls[-1][2]["json"] == {
+        "key": "lifestyle.auto-logging.enabled",
+        "value": "true",
+    }
+    g.set_lifestyle_auto_logging(False)
+    assert calls[-1][2]["json"]["value"] == "false"
+    with pytest.raises(ValueError):
+        g.set_lifestyle_auto_logging("true")
+    assert len(calls) == 2

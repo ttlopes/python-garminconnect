@@ -7,6 +7,12 @@ Numbers in parentheses refer to GitHub issues and pull requests. Releases before
 0.3.10 are described on the [GitHub Releases](https://github.com/cyberjunky/python-garminconnect/releases)
 page.
 
+## [Unreleased]
+
+### Added
+
+- **Lifestyle logging can be written, not only read**: `get_lifestyle_behaviors()` lists the built-in and custom behaviors, `set_tracked_lifestyle_behaviors()` chooses which ones are tracked, `log_lifestyle_behavior()` logs one for a day (yes/no, an amount, or amounts per sub-type such as beer or wine) and `clear_lifestyle_behavior_log()` removes the entry. Custom behaviors can be created, renamed and deleted with `create_lifestyle_behaviors()`, `update_lifestyle_behavior()` and `delete_lifestyle_behaviors()`, and `get_lifestyle_auto_logging()` / `set_lifestyle_auto_logging()` read and change the auto-logging setting. The requests are the ones the Garmin Connect mobile app sends (there is no web app page); each was tested live on a test account and read back. Logs only appear in `get_lifestyle_logging_data()` for behaviors tracked on that date.
+
 ## [0.3.20] - 2026-10-23
 
 ### Added

@@ -332,6 +332,15 @@ class GarminBase:
         self.garmin_connect_daily_lifestyle_logging_url = (
             "/lifestylelogging-service/dailyLog"
         )
+        self.garmin_connect_lifestyle_behaviors_url = (
+            "/lifestylelogging-service/behaviours"
+        )
+        self.garmin_connect_tracked_lifestyle_behaviors_url = (
+            "/lifestylelogging-service/trackedBehaviours"
+        )
+        self.garmin_connect_lifestyle_auto_logging_url = (
+            "/userpreference-service/lifestyle.auto-logging.enabled"
+        )
 
         # Service roots for the endpoints mapped from the Garmin Connect web
         # app (see docs/API_ENDPOINTS.md).
@@ -731,6 +740,28 @@ class GarminBase:
                 "a display name, so this request cannot be made."
             )
         return quote(self.display_name, safe="")
+
+    def _require_profile_id(self) -> int:
+        """Return profile_id, reloading the profile if unset.
+
+        Some writes must name the account's profile id in the body, so one
+        reload is attempted before giving up.
+        """
+        if self.profile_id is None:
+            try:
+                self._load_social_profile()
+            except Exception as e:
+                raise GarminConnectConnectionError(
+                    "Could not load the Garmin social profile, so the profile "
+                    "id required for this request is unavailable. "
+                    "Please log in again."
+                ) from e
+        if self.profile_id is None:
+            raise GarminConnectConnectionError(
+                "Profile id is not set. Your Garmin profile did not include "
+                "a profile id, so this request cannot be made."
+            )
+        return self.profile_id
 
     def get_full_name(self) -> str | None:
         """Return full name of the authenticated user."""

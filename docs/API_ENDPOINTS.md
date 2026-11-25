@@ -115,6 +115,24 @@ Not added: `/metrics-service/metrics/eventracetimeprojections/{eventId}/{d1}/{d2
 | `get_sleep_stats_weekly(end=None, weeks=52)` | `GET /sleep-service/stats/sleep/weekly/{end}/{weeks}` | | yes |
 | `get_sleep_stats_overall(start, end)` | `GET /sleep-service/stats/sleep/overall/{start}/{end}` | | yes |
 
+## Lifestyle logging (`lifestylelogging-service`)
+
+Lifestyle logging has no web app page; these requests come from the Garmin
+Connect mobile app. Each was checked live through this library on a test
+account and read back.
+
+| Method | Request | Notes | Verified |
+|---|---|---|---|
+| `get_lifestyle_behaviors(cdate)` | `GET /lifestylelogging-service/behaviours/{date}` | Built-in and custom behaviors: `behaviourId`, `name`, `category`, `measurementType` (`NONE` yes/no, `QUANTITY` count), `subTypes`, `tracked`. | yes |
+| `set_tracked_lifestyle_behaviors(behavior_ids, cdate=None)` | `PUT /lifestylelogging-service/trackedBehaviours` with `{"trackedBehaviours": [ids], "calendarDate", "userProfilePk"}` | Replaces the whole list; `[]` untracks all. `userProfilePk` is the account's profile id. Logs only appear for behaviors tracked on that date. | yes |
+| `log_lifestyle_behavior(behavior_id, cdate, logged=True, amount=None, sub_type_amounts=None)` | `PUT /lifestylelogging-service/dailyLog/{behaviourId}/{date}` with `{"logStatus": "YES"\|"NO", "updateTimestamp"[, "details"]}` | `details` is `[{"amount"}]` or `[{"subTypeId", "subTypeName", "amount"}]`; Garmin rejects amounts outside 1-25 (400). 204. | yes |
+| `clear_lifestyle_behavior_log(behavior_id, cdate)` | `DELETE /lifestylelogging-service/dailyLog/{behaviourId}/{date}` | 204. | yes |
+| `create_lifestyle_behaviors(behaviors)` | `POST /lifestylelogging-service/behaviours/batch` with `[{"name", "measurementType", "sleepRelated"}]` | Created untracked, category `CUSTOM` or `CUSTOM_SLEEP_RELATED`. | yes |
+| `update_lifestyle_behavior(behavior_id, *, name=None, measurement_type=None, sleep_related=None)` | `PUT /lifestylelogging-service/behaviours/{behaviourId}` with `{"measurementType", "name", "sleepRelated"}` | Custom behaviors only; editing a built-in one was not tried. | yes |
+| `delete_lifestyle_behaviors(behavior_ids)` | `DELETE /lifestylelogging-service/behaviours/batchDelete` with `{"ids": [...]}` | 204. Deleting a built-in behavior was not tried. | yes |
+| `get_lifestyle_auto_logging()` | `GET /userpreference-service/lifestyle.auto-logging.enabled` | `{"key", "value"}`; `value` is null until set. | yes |
+| `set_lifestyle_auto_logging(enabled)` | `PUT /userpreference-service/lifestyle.auto-logging.enabled` with `{"key": "lifestyle.auto-logging.enabled", "value": "true"\|"false"}` | Logs the exercise behaviors from recorded activities; the setting was saved, the auto-logging itself was not observed. | yes (effect not observed) |
+
 ## Health Snapshot (`wellnessactivity-service`)
 
 | Method | Request | Notes | Verified |
@@ -339,7 +357,8 @@ leaderboards, inbox/newsfeed, ad-hoc challenge invites, profile image upload,
 Office 365 calendar sync, Fitbit import, dive/golf/animal (dog) specifics, the
 Index scale set-up (`weightscale-service`), nutrition food search/favourites/
 recipes/custom foods, dashboard layout (`userfocus-service`) and UI
-preferences (`userpreference-service`). Open an issue if you need one of them.
+preferences (`userpreference-service`, apart from lifestyle auto-logging). Open
+an issue if you need one of them.
 
 The GraphQL gateway operations the dashboard uses are listed in
 [graphql_operations.md](graphql_operations.md).

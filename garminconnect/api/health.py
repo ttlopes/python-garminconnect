@@ -11,11 +11,15 @@ from ._common import (
     DATE_FORMAT_STR,
     MAX_HYDRATION_ML,
     VALID_DAILY_STATS_TYPES,
+    VALID_LIFESTYLE_BEHAVIOR_KEYS,
     _coerce_positive_id,
     _fmt_ts,
+    _lifestyle_behavior_body,
     _validate_date_format,
     _validate_date_range,
+    _validate_id_list,
     _validate_jetlag_flights,
+    _validate_lifestyle_amount,
     _validate_non_negative_integer,
     _validate_positive_integer,
     _validate_uuid,
@@ -492,6 +496,235 @@ class HealthMixin(GarminBase):
         logger.debug("Requesting lifestyle logging data")
 
         return self.connectapi(url)
+
+    def get_lifestyle_behaviors(self, cdate: str) -> list[dict[str, Any]]:
+        """Return every lifestyle logging behavior, built-in and custom.
+
+        GET /lifestylelogging-service/behaviours/{date}. Each behavior has a
+        ``behaviourId``, ``name``, ``category``, ``measurementType`` (``NONE``
+        for yes/no, ``QUANTITY`` for a count), ``subTypes`` (or null) and
+        ``tracked``. Custom behaviors have a category starting with
+        ``CUSTOM``.
+        """
+        cdate = _validate_date_format(cdate, "cdate")
+        url = f"{self.garmin_connect_lifestyle_behaviors_url}/{cdate}"
+        logger.debug("Requesting lifestyle behaviors")
+
+        return self.connectapi(url)
+
+    def set_tracked_lifestyle_behaviors(
+        self, behavior_ids: list[int], cdate: str | None = None
+    ) -> dict[str, Any]:
+        """Set which lifestyle behaviors are tracked from a date on.
+
+        PUT /lifestylelogging-service/trackedBehaviours with
+        ``{"trackedBehaviours": [ids], "calendarDate", "userProfilePk"}``.
+        The list replaces the whole tracked list; ``[]`` untracks everything.
+        Logs only appear in :meth:`get_lifestyle_logging_data` for behaviors
+        tracked on that date. Returns the request body as Garmin echoes it.
+        """
+        behavior_ids = _validate_id_list(behavior_ids, "behavior_ids", allow_empty=True)
+        cdate = self._date_or_today(cdate)
+        payload = {
+            "trackedBehaviours": behavior_ids,
+            "calendarDate": cdate,
+            "userProfilePk": self._require_profile_id(),
+        }
+        logger.debug("Tracking %d lifestyle behavior(s)", len(behavior_ids))
+        return self.client.put(
+            "connectapi",
+            self.garmin_connect_tracked_lifestyle_behaviors_url,
+            json=payload,
+            api=True,
+        )
+
+    def log_lifestyle_behavior(
+        self,
+        behavior_id: int | str,
+        cdate: str,
+        logged: bool = True,
+        amount: int | None = None,
+        sub_type_amounts: dict[int, int] | None = None,
+    ) -> Any:
+        """Log a lifestyle behavior for a day, replacing that day's entry.
+
+        PUT /lifestylelogging-service/dailyLog/{behaviourId}/{date} with
+        ``logStatus`` (``YES`` when ``logged``, else ``NO``) and
+        ``updateTimestamp`` (local time). For a ``QUANTITY`` behavior pass
+        ``amount``, or ``sub_type_amounts`` as ``{subTypeId: amount}`` for one
+        with sub-types (Alcohol, caffeine). Amounts are integers from 1 to 25.
+        Garmin answers with an empty body.
+        """
+        behavior_id = _coerce_positive_id(behavior_id, "behavior_id")
+        cdate = _validate_date_format(cdate, "cdate")
+        if not isinstance(logged, bool):
+            raise ValueError("logged must be a bool")
+        if amount is not None and sub_type_amounts is not None:
+            raise ValueError("pass amount or sub_type_amounts, not both")
+        if not logged and (amount is not None or sub_type_amounts is not None):
+            raise ValueError("amounts can only be logged with logged=True")
+        details: list[dict[str, Any]] | None = None
+        if amount is not None:
+            details = [{"amount": _validate_lifestyle_amount(amount)}]
+        elif sub_type_amounts is not None:
+            if not isinstance(sub_type_amounts, dict) or not sub_type_amounts:
+                raise ValueError("sub_type_amounts must be a non-empty dict")
+            details = [
+                {
+                    "subTypeId": _coerce_positive_id(sub_type_id, "subTypeId"),
+                    "subTypeName": "",
+                    "amount": _validate_lifestyle_amount(value),
+                }
+                for sub_type_id, value in sub_type_amounts.items()
+            ]
+        now = self.now()
+        payload: dict[str, Any] = {
+            "logStatus": "YES" if logged else "NO",
+            "updateTimestamp": (
+                f"{now.strftime('%Y-%m-%dT%H:%M:%S')}.{now.microsecond // 100000}"
+            ),
+        }
+        if details is not None:
+            payload["details"] = details
+        url = f"{self.garmin_connect_daily_lifestyle_logging_url}/{behavior_id}/{cdate}"
+        logger.debug("Logging lifestyle behavior %s on %s", behavior_id, cdate)
+        return self._json_or_none(self.client.put("connectapi", url, json=payload))
+
+    def clear_lifestyle_behavior_log(self, behavior_id: int | str, cdate: str) -> Any:
+        """Remove a day's log entry for a lifestyle behavior.
+
+        DELETE /lifestylelogging-service/dailyLog/{behaviourId}/{date}. Garmin
+        answers with an empty body.
+        """
+        behavior_id = _coerce_positive_id(behavior_id, "behavior_id")
+        cdate = _validate_date_format(cdate, "cdate")
+        url = f"{self.garmin_connect_daily_lifestyle_logging_url}/{behavior_id}/{cdate}"
+        logger.debug("Clearing lifestyle behavior %s log on %s", behavior_id, cdate)
+        return self._json_or_none(self.client.delete("connectapi", url))
+
+    def create_lifestyle_behaviors(
+        self, behaviors: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Create custom lifestyle behaviors and return them.
+
+        POST /lifestylelogging-service/behaviours/batch with a list of
+        ``{"name", "measurementType", "sleepRelated"}``. Each behavior is a
+        dict with ``name``, ``measurement_type`` (``NONE`` for yes/no, the
+        default, or ``QUANTITY`` for a count) and ``sleep_related`` (default
+        False). New behaviors are not tracked; track them with
+        :meth:`set_tracked_lifestyle_behaviors`.
+        """
+        if not isinstance(behaviors, list) or not behaviors:
+            raise ValueError("behaviors must be a non-empty list")
+        payload = []
+        for i, behavior in enumerate(behaviors):
+            if not isinstance(behavior, dict):
+                raise ValueError(f"behaviors[{i}] must be a dict")
+            unknown = set(behavior) - VALID_LIFESTYLE_BEHAVIOR_KEYS
+            if unknown:
+                raise ValueError(f"behaviors[{i}] has unknown keys: {sorted(unknown)}")
+            payload.append(
+                _lifestyle_behavior_body(
+                    behavior.get("name"),
+                    behavior.get("measurement_type", "NONE"),
+                    behavior.get("sleep_related", False),
+                    f"behaviors[{i}]",
+                )
+            )
+        url = f"{self.garmin_connect_lifestyle_behaviors_url}/batch"
+        logger.debug("Creating %d lifestyle behavior(s)", len(payload))
+        return self.client.post("connectapi", url, json=payload, api=True)
+
+    def update_lifestyle_behavior(
+        self,
+        behavior_id: int | str,
+        *,
+        name: str | None = None,
+        measurement_type: str | None = None,
+        sleep_related: bool | None = None,
+    ) -> dict[str, Any]:
+        """Edit a custom lifestyle behavior and return it.
+
+        PUT /lifestylelogging-service/behaviours/{behaviourId} with
+        ``{"measurementType", "name", "sleepRelated"}``. The current values
+        are read with :meth:`get_lifestyle_behaviors` and only the given
+        arguments change. Only custom behaviors (category starting with
+        ``CUSTOM``) are accepted; editing a built-in one was not tried.
+        """
+        behavior_id = _coerce_positive_id(behavior_id, "behavior_id")
+        if name is None and measurement_type is None and sleep_related is None:
+            raise ValueError("nothing to change")
+        behaviors = self.get_lifestyle_behaviors(self.today().isoformat()) or []
+        current = next(
+            (
+                b
+                for b in behaviors
+                if isinstance(b, dict) and b.get("behaviourId") == behavior_id
+            ),
+            None,
+        )
+        if current is None:
+            raise ValueError(f"lifestyle behavior {behavior_id} not found")
+        if not str(current.get("category") or "").startswith("CUSTOM"):
+            raise ValueError(f"lifestyle behavior {behavior_id} is not a custom one")
+        payload = _lifestyle_behavior_body(
+            current.get("name") if name is None else name,
+            (
+                current.get("measurementType")
+                if measurement_type is None
+                else measurement_type
+            ),
+            current.get("sleepRelated") if sleep_related is None else sleep_related,
+            "behavior",
+        )
+        url = f"{self.garmin_connect_lifestyle_behaviors_url}/{behavior_id}"
+        logger.debug("Updating lifestyle behavior %s", behavior_id)
+        return self.client.put("connectapi", url, json=payload, api=True)
+
+    def delete_lifestyle_behaviors(self, behavior_ids: list[int]) -> Any:
+        """Delete custom lifestyle behaviors.
+
+        DELETE /lifestylelogging-service/behaviours/batchDelete with
+        ``{"ids": [...]}``. Meant for custom behaviors; deleting a built-in
+        one was not tried. Garmin answers with an empty body.
+        """
+        behavior_ids = _validate_id_list(behavior_ids, "behavior_ids")
+        url = f"{self.garmin_connect_lifestyle_behaviors_url}/batchDelete"
+        logger.debug("Deleting %d lifestyle behavior(s)", len(behavior_ids))
+        return self._json_or_none(
+            self.client.delete("connectapi", url, json={"ids": behavior_ids})
+        )
+
+    def get_lifestyle_auto_logging(self) -> dict[str, Any]:
+        """Return the lifestyle auto-logging setting as ``{"key", "value"}``.
+
+        GET /userpreference-service/lifestyle.auto-logging.enabled. ``value``
+        is ``"true"``, ``"false"`` or null when never set.
+        """
+        logger.debug("Requesting lifestyle auto-logging setting")
+        return self.connectapi(self.garmin_connect_lifestyle_auto_logging_url)
+
+    def set_lifestyle_auto_logging(self, enabled: bool) -> dict[str, Any]:
+        """Turn lifestyle auto-logging on or off.
+
+        PUT /userpreference-service/lifestyle.auto-logging.enabled with
+        ``{"key": "lifestyle.auto-logging.enabled", "value": "true"|"false"}``.
+        When on, Garmin logs the exercise behaviors from recorded activities.
+        Returns the request body as Garmin echoes it.
+        """
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be a bool")
+        payload = {
+            "key": "lifestyle.auto-logging.enabled",
+            "value": "true" if enabled else "false",
+        }
+        logger.debug("Setting lifestyle auto-logging to %s", enabled)
+        return self.client.put(
+            "connectapi",
+            self.garmin_connect_lifestyle_auto_logging_url,
+            json=payload,
+            api=True,
+        )
 
     def get_rhr_day(self, cdate: str) -> dict[str, Any]:
         """Return resting heart rate data for 'cdate' format 'YYYY-MM-DD'."""
