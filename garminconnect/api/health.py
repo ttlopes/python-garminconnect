@@ -1065,7 +1065,14 @@ class HealthMixin(GarminBase):
                 raise ValueError(f"{name} must be a datetime")
             if value.tzinfo is None or value.utcoffset() is None:
                 raise ValueError(f"{name} must be timezone-aware")
-        if sleep_end <= sleep_start:
+            # A wall time skipped by a DST change has no real instant, so its
+            # GMT and local timestamps would disagree.
+            round_trip = value.astimezone(UTC).astimezone(value.tzinfo)
+            if round_trip.replace(tzinfo=None) != value.replace(tzinfo=None):
+                raise ValueError(f"{name} does not exist in its timezone (DST gap)")
+        # Compare instants: with a shared tzinfo Python compares wall times and
+        # ignores fold, which misorders times in a repeated DST hour.
+        if sleep_end.astimezone(UTC) <= sleep_start.astimezone(UTC):
             raise ValueError("sleep_end must be after sleep_start")
 
         url = f"{self.garmin_connect_sleep_service_url}/sleep/dailySleep"

@@ -580,3 +580,35 @@ def test_delete_activity_image_rejects_bad_image_id(writer, image_id):
     with pytest.raises(ValueError):
         g.delete_activity_image(987654, image_id)
     assert calls == []
+
+
+def test_set_sleep_window_dst_edge_cases(writer, monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    g, calls = writer
+    ny = ZoneInfo("America/New_York")
+    monkeypatch.setattr(g, "connectapi", lambda path, **kw: {"id": 1})
+    # 02:30 does not exist on 2026-03-08 (clocks jump 02:00 -> 03:00).
+    with pytest.raises(ValueError, match="DST gap"):
+        g.set_sleep_window(
+            "2026-03-08",
+            datetime(2026, 3, 7, 23, 0, tzinfo=ny),
+            datetime(2026, 3, 8, 2, 30, tzinfo=ny),
+        )
+    # 01:15 fold=1 (06:15 UTC) is after 01:45 fold=0 (05:45 UTC) in the
+    # repeated hour on 2026-11-01: a reversed window despite the wall times.
+    with pytest.raises(ValueError, match="after sleep_start"):
+        g.set_sleep_window(
+            "2026-11-01",
+            datetime(2026, 11, 1, 1, 15, fold=1, tzinfo=ny),
+            datetime(2026, 11, 1, 1, 45, fold=0, tzinfo=ny),
+        )
+    assert calls == []
+    # The other way round is a valid 90-minute window across the change.
+    g.set_sleep_window(
+        "2026-11-01",
+        datetime(2026, 11, 1, 1, 15, fold=0, tzinfo=ny),
+        datetime(2026, 11, 1, 1, 45, fold=1, tzinfo=ny),
+    )
+    sent = calls[-1][2]["json"]
+    assert sent["sleepEndTimestampGMT"] - sent["sleepStartTimestampGMT"] == 90 * 60000
