@@ -5378,6 +5378,11 @@ def set_sleep_window_data(api: Garmin) -> None:
             parsed = datetime.datetime.fromisoformat(value)
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=tz)
+                # A wall time skipped when clocks go forward has no instant.
+                round_trip = parsed.astimezone(datetime.UTC).astimezone(tz)
+                if round_trip.replace(tzinfo=None) != parsed.replace(tzinfo=None):
+                    print(f"❌ {value} does not exist in {tz} (clocks skip it)")
+                    return
                 # In the hour repeated when clocks go back, the wall time
                 # alone does not say which of the two instants is meant.
                 if parsed.utcoffset() != parsed.replace(fold=1).utcoffset():
