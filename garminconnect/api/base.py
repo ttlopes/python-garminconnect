@@ -35,6 +35,39 @@ if TYPE_CHECKING:
     from . import Garmin
 
 
+def _profile_fetch_error(exc: Exception, what: str, final: bool) -> Exception | None:
+    """Map a failed profile/settings fetch to the exception to raise, if any.
+
+    Only a definitive rejection (401/403, after the transport has already
+    tried a token refresh) is an authentication error: login() treats that as
+    a stale token cache and falls back to a full credential login, so a
+    network failure or server error must never look like one. A 429 is
+    raised as a rate limit straight away, since retrying only makes it worse.
+    Anything else is transient: ``None`` (retry) until the final attempt,
+    then a connection error.
+    """
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status in (401, 403):
+        return GarminConnectAuthenticationError(
+            f"Failed to retrieve {what}: token rejected (HTTP {status})"
+        )
+    if status == 429:
+        return GarminConnectTooManyRequestsError(
+            f"Failed to retrieve {what}: rate limited (HTTP 429)"
+        )
+    if not final:
+        return None
+    if isinstance(
+        exc, requests.exceptions.ConnectionError | requests.exceptions.Timeout
+    ):
+        reason = "network error"
+    elif status is not None:
+        reason = f"HTTP {status}"
+    else:
+        reason = type(exc).__name__
+    return GarminConnectConnectionError(f"Failed to retrieve {what}: {reason}")
+
+
 class GarminBase:
     """Shared state and core calls of :class:`garminconnect.Garmin`.
 
@@ -630,8 +663,10 @@ class GarminBase:
         display name is needed to build most API URLs. If it is still missing
         after three attempts the profile is accepted as is (new or empty
         Garmin profiles may legitimately lack one) and the username is used
-        as fallback. Raises ``GarminConnectAuthenticationError`` if no
-        profile could be retrieved at all.
+        as fallback. Raises ``GarminConnectAuthenticationError`` if the token
+        is rejected (401/403) or the profile is invalid,
+        ``GarminConnectTooManyRequestsError`` on a 429, and
+        ``GarminConnectConnectionError`` if network or server errors persist.
         """
         prof = None
         name = None
@@ -646,10 +681,9 @@ class GarminBase:
                     "Social profile has no usable displayName (attempt %d)", attempt + 1
                 )
             except Exception as e:
-                if attempt == 2:
-                    raise GarminConnectAuthenticationError(
-                        "Failed to retrieve social profile"
-                    ) from e
+                error = _profile_fetch_error(e, "social profile", final=attempt == 2)
+                if error is not None:
+                    raise error from e
                 logger.debug("Retrying social profile fetch: %s", e)
             if attempt < 2:
                 time.sleep(1)
@@ -663,8 +697,9 @@ class GarminBase:
 
     def _load_profile_and_settings(self) -> None:
         """Fetch social profile and user settings, populating display name,
-        full name and unit system. Raises ``GarminConnectAuthenticationError``
-        if either cannot be retrieved (e.g. the token is rejected).
+        full name and unit system. Errors are classified as in
+        ``_load_social_profile``: only a rejected token or invalid data is a
+        ``GarminConnectAuthenticationError``.
         """
         self._load_social_profile()
 
@@ -675,10 +710,9 @@ class GarminBase:
                 if settings and isinstance(settings, dict) and "userData" in settings:
                     break
             except Exception as e:
-                if attempt == 2:
-                    raise GarminConnectAuthenticationError(
-                        "Failed to retrieve user settings"
-                    ) from e
+                error = _profile_fetch_error(e, "user settings", final=attempt == 2)
+                if error is not None:
+                    raise error from e
                 logger.debug("Retrying user settings fetch: %s", e)
                 time.sleep(1)
         else:
@@ -848,6 +882,29 @@ class GarminBase:
         return self._json_or_none(
             self.client.put("connectapi", url, json={"deviceId": device_id})
         )
+
+    def set_primary_activity_tracker(self, device_id: int | str) -> Any:
+        """Choose which device Garmin treats as the primary wearable.
+
+        The primary wearable (the web app's "Primary Wearable", called primary
+        activity tracker in the API) is the source of daily health metrics such
+        as steps, stress and sleep. PUT
+        /device-service/deviceservice/device-info/{id}/primary-activity-tracker,
+        the request the web app's Device Priority page sends; the device ID is
+        part of the URL and no body is needed. Garmin answers 204, so the
+        method returns ``None``.
+        ``get_primary_training_device()`` shows the result: the chosen device
+        carries ``primaryWearableDevice: true`` under ``WearableDevices``. The
+        primary training device is a separate setting and stays unchanged.
+        Verified live by switching between two devices and reading back.
+        """
+        device_id = _coerce_positive_id(device_id, "device_id")
+        url = (
+            f"{self.garmin_connect_device_url}/device-info/{device_id}"
+            "/primary-activity-tracker"
+        )
+        logger.debug("Setting primary activity tracker %s", device_id)
+        return self._json_or_none(self.client.put("connectapi", url))
 
     def request_reload(
         self, cdate: str, device_id: int | str | None = None

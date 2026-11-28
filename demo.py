@@ -619,6 +619,14 @@ menu_categories = {
                 "desc": "Upload typed swimming workout with CSS offset targets (sample)",
                 "key": "upload_swimming_css_workout",
             },
+            "E": {
+                "desc": "Add a photo to an activity (interactive)",
+                "key": "upload_activity_image",
+            },
+            "F": {
+                "desc": "Remove a photo from an activity (interactive)",
+                "key": "delete_activity_image",
+            },
         },
     },
     "6": {
@@ -738,6 +746,10 @@ menu_categories = {
             "c": {
                 "desc": "Set primary training device (interactive)",
                 "key": "set_primary_training_device",
+            },
+            "d": {
+                "desc": "Set primary wearable (interactive)",
+                "key": "set_primary_activity_tracker",
             },
         },
     },
@@ -2563,16 +2575,7 @@ def get_single_activity_data(api: Garmin) -> None:
 def get_activity_images_data(api: Garmin) -> None:
     """Get photos attached to an activity (defaults to the most recent one)."""
     try:
-        # The latest activity is only a convenience default; if looking it
-        # up fails, still let the user type an ID they know has photos.
-        default_id = ""
-        try:
-            last = api.get_last_activity()
-            default_id = str(last["activityId"]) if last else ""
-        except Exception as e:
-            print(f"⚠️ Could not look up the most recent activity: {e}")
-        prompt = f"Activity ID [{default_id}]: " if default_id else "Activity ID: "
-        activity_id = input(prompt).strip() or default_id
+        activity_id = _prompt_activity_id(api)
         if not activity_id:
             print("ℹ️ No activity ID given")
             return
@@ -2589,6 +2592,83 @@ def get_activity_images_data(api: Garmin) -> None:
             print("ℹ️ Photo URLs are presigned and expire after 24 hours")
     except Exception as e:
         print(f"❌ Error getting activity images: {e}")
+
+
+def _prompt_activity_id(api: Garmin) -> str:
+    """Ask for an activity ID, offering the most recent activity as the default.
+
+    The latest activity is only a convenience default; if looking it up fails,
+    the user can still type an ID they know.
+    """
+    default_id = ""
+    try:
+        last = api.get_last_activity()
+        default_id = str(last["activityId"]) if last else ""
+    except Exception as e:
+        print(f"⚠️ Could not look up the most recent activity: {e}")
+    prompt = f"Activity ID [{default_id}]: " if default_id else "Activity ID: "
+    return input(prompt).strip() or default_id
+
+
+def upload_activity_image_data(api: Garmin) -> None:
+    """Add a JPEG or PNG photo to an activity (defaults to the most recent one)."""
+    try:
+        activity_id = _prompt_activity_id(api)
+        if not activity_id:
+            print("ℹ️ No activity ID given")
+            return
+        image_path = input("Image file (.jpg, .jpeg or .png): ").strip()
+        if not image_path:
+            print("ℹ️ No image file given")
+            return
+        success, image = call_and_display(
+            api.upload_activity_image,
+            activity_id,
+            image_path,
+            method_name="upload_activity_image",
+            api_call_desc=f"api.upload_activity_image({activity_id}, {image_path!r})",
+        )
+        if success and isinstance(image, dict) and image.get("imageId"):
+            print(f"ℹ️ Remove it again with option F and image ID {image['imageId']}")
+    except Exception as e:
+        print(f"❌ Error adding activity image: {e}")
+
+
+def delete_activity_image_data(api: Garmin) -> None:
+    """Remove one photo from an activity, picked from its current photos."""
+    try:
+        activity_id = _prompt_activity_id(api)
+        if not activity_id:
+            print("ℹ️ No activity ID given")
+            return
+        images = api.get_activity_images(activity_id)
+        if not images:
+            print("ℹ️ No photos attached to this activity")
+            return
+        print("\nPhotos on this activity:")
+        for i, image in enumerate(images):
+            print(f"{i}: {image.get('imageId')}")
+        choice = input("Enter photo index to remove (or 'q' to cancel): ").strip()
+        if choice.lower() == "q" or not choice.isdigit():
+            print("❌ Cancelled")
+            return
+        index = int(choice)
+        if not 0 <= index < len(images):
+            print("❌ Invalid index")
+            return
+        image_id = images[index]["imageId"]
+        if input(f"Remove photo {image_id}? (yes/no): ").strip().lower() != "yes":
+            print("❌ Cancelled")
+            return
+        call_and_display(
+            api.delete_activity_image,
+            activity_id,
+            image_id,
+            method_name="delete_activity_image",
+            api_call_desc=f"api.delete_activity_image({activity_id}, {image_id!r})",
+        )
+    except Exception as e:
+        print(f"❌ Error removing activity image: {e}")
 
 
 def get_activity_exercise_sets_data(api: Garmin) -> None:
@@ -5389,6 +5469,26 @@ def set_primary_training_device_data(api: Garmin) -> None:
         print(f"❌ Error setting primary training device: {e}")
 
 
+def set_primary_activity_tracker_data(api: Garmin) -> None:
+    """Choose the primary wearable (source of steps, stress and sleep)."""
+    try:
+        device = _pick(
+            api.get_devices(),
+            "device",
+            lambda d: f"{d.get('productDisplayName')} (id {d.get('deviceId')})",
+        )
+        if not device:
+            return
+        call_and_display(
+            api.set_primary_activity_tracker,
+            device["deviceId"],
+            method_name="set_primary_activity_tracker",
+            api_call_desc=f"api.set_primary_activity_tracker({device['deviceId']})",
+        )
+    except Exception as e:
+        print(f"❌ Error setting primary wearable: {e}")
+
+
 def update_activity_name_data(api: Garmin) -> None:
     """Rename the latest activity through the generic update call."""
     try:
@@ -5750,6 +5850,8 @@ def execute_api_call(api: Garmin, key: str) -> None:
             "get_activity_gear": lambda: get_activity_gear_data(api),
             "get_activity": lambda: get_single_activity_data(api),
             "get_activity_images": lambda: get_activity_images_data(api),
+            "upload_activity_image": lambda: upload_activity_image_data(api),
+            "delete_activity_image": lambda: delete_activity_image_data(api),
             "get_activity_exercise_sets": lambda: get_activity_exercise_sets_data(api),
             "get_workout_by_id": lambda: get_workout_by_id_data(api),
             "download_workout": lambda: download_workout_data(api),
@@ -6059,6 +6161,9 @@ def execute_api_call(api: Garmin, key: str) -> None:
             "calendar_note": lambda: calendar_note_data(api),
             "update_blood_pressure": lambda: update_blood_pressure_note_data(api),
             "set_primary_training_device": lambda: set_primary_training_device_data(
+                api
+            ),
+            "set_primary_activity_tracker": lambda: set_primary_activity_tracker_data(
                 api
             ),
             "update_activity": lambda: update_activity_name_data(api),
