@@ -5,7 +5,7 @@ path and query parameters each method sends, which is what matters for
 compatibility with Garmin's undocumented API.
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 import requests
@@ -450,6 +450,94 @@ def test_user_settings_merge_and_primary_device(writer, monkeypatch):
     assert calls[-1][2]["json"] == {"deviceId": 123}
 
 
+def test_primary_activity_tracker(writer):
+    g, calls = writer
+    g.set_primary_activity_tracker("123")
+    assert calls[-1][:2] == (
+        "PUT",
+        "/device-service/deviceservice/device-info/123/primary-activity-tracker",
+    )
+    assert calls[-1][2] == {}  # no body of any kind
+    for bad in (0, -1, "abc", 1.9, None):
+        with pytest.raises(ValueError):
+            g.set_primary_activity_tracker(bad)
+
+
+def test_set_sleep_window(writer, monkeypatch):
+    g, calls = writer
+    record = {
+        "id": 1000001,
+        "calendarDate": "2026-01-15",
+        "sleepStartTimestampGMT": 1768428900000,
+        "sleepEndTimestampGMT": 1768455000000,
+        "sleepStartTimestampLocal": 1768432500000,
+        "sleepEndTimestampLocal": 1768458600000,
+        "sleepTimeSeconds": 26100,
+        "sleepWindowConfirmed": True,
+        "sleepWindowConfirmationType": "enhanced_confirmed_final",
+    }
+    original = dict(record)
+    reads = []
+
+    def fake_get(path, **kw):
+        reads.append((path, kw))
+        return record if len(reads) == 1 else {"id": 1000001, "read": "back"}
+
+    monkeypatch.setattr(g, "connectapi", fake_get)
+    cet = timezone(timedelta(hours=1))
+    out = g.set_sleep_window(
+        "2026-01-15",
+        datetime(2026, 1, 14, 23, 30, tzinfo=cet),
+        datetime(2026, 1, 15, 7, 0, tzinfo=cet),
+    )
+    assert reads[0] == (
+        "/sleep-service/sleep/dailySleep",
+        {"params": {"date": "2026-01-15"}},
+    )
+    method, url, kw = calls[-1]
+    assert (method, url) == ("PUT", "/sleep-service/sleep/dailySleep/1000001")
+    assert kw["json"] == original | {
+        "sleepStartTimestampGMT": 1768429800000,  # 22:30 UTC
+        "sleepEndTimestampGMT": 1768456800000,  # 06:00 UTC
+        "sleepStartTimestampLocal": 1768433400000,  # 23:30 wall clock
+        "sleepEndTimestampLocal": 1768460400000,  # 07:00 wall clock
+    }
+    assert record == original  # the record that was read stays untouched
+    assert reads[1] == reads[0]  # read back after the write
+    assert out == {"id": 1000001, "read": "back"}
+
+
+def test_set_sleep_window_rejects_bad_input(writer, monkeypatch):
+    g, calls = writer
+    cet = timezone(timedelta(hours=1))
+    start = datetime(2026, 1, 14, 23, 30, tzinfo=cet)
+    end = datetime(2026, 1, 15, 7, 0, tzinfo=cet)
+    monkeypatch.setattr(g, "connectapi", lambda path, **kw: {"id": 1})
+    bad_calls = [
+        ("15.01.2026", start, end),
+        ("2026-01-15", start.replace(tzinfo=None), end),
+        ("2026-01-15", start, end.replace(tzinfo=None)),
+        ("2026-01-15", "2026-01-14T23:30:00+01:00", end),
+        ("2026-01-15", end, start),
+        ("2026-01-15", start, start),
+    ]
+    for args in bad_calls:
+        with pytest.raises(ValueError):
+            g.set_sleep_window(*args)
+    for bad_record in (
+        {},
+        None,
+        {"calendarDate": "2026-01-15"},
+        {"id": 0},
+        {"id": 1.9},
+        {"id": "1/../2"},
+    ):
+        monkeypatch.setattr(g, "connectapi", lambda path, _r=bad_record, **kw: _r)
+        with pytest.raises(ValueError):
+            g.set_sleep_window("2026-01-15", start, end)
+    assert calls == []
+
+
 def test_calendar_notes(writer):
     g, calls = writer
     g.create_calendar_note("2026-10-20", "Race day", "Easy jog in the morning")
@@ -482,6 +570,94 @@ def test_update_activity_partial_put(writer):
     }
     with pytest.raises(ValueError):
         g.update_activity(987654, {})
+
+
+IMAGE_ID = "7f66cc3cb7214e4195097d5478e852ba"
+
+
+def test_upload_activity_image_posts_multipart_file(writer, tmp_path):
+    g, calls = writer
+    jpg = tmp_path / "summit.JPG"
+    jpg.write_bytes(b"\xff\xd8\xff jpeg")
+    png = tmp_path / "card.png"
+    png.write_bytes(b"\x89PNG png")
+
+    g.upload_activity_image(987654, jpg)
+    method, url, kw = calls[-1]
+    assert (method, url) == ("POST", "/activity-service/activity/987654/image")
+    assert kw["files"] == {"file": ("summit.JPG", b"\xff\xd8\xff jpeg", "image/jpeg")}
+    assert kw["api"] is True
+
+    g.upload_activity_image("987654", str(png))
+    assert calls[-1][2]["files"]["file"] == ("card.png", b"\x89PNG png", "image/png")
+
+
+def test_upload_activity_image_rejects_bad_input(writer, tmp_path):
+    from garminconnect import GarminConnectInvalidFileFormatError
+
+    g, calls = writer
+    gif = tmp_path / "anim.gif"
+    gif.write_bytes(b"GIF89a")
+    with pytest.raises(GarminConnectInvalidFileFormatError):
+        g.upload_activity_image(987654, gif)
+    with pytest.raises(FileNotFoundError):
+        g.upload_activity_image(987654, tmp_path / "missing.jpg")
+    with pytest.raises(ValueError):
+        g.upload_activity_image(987654, "")
+    with pytest.raises(ValueError):
+        g.upload_activity_image(1.5, tmp_path / "x.jpg")
+    with pytest.raises(ValueError):
+        g.upload_activity_image("../1", tmp_path / "x.jpg")
+    assert calls == []
+
+
+def test_delete_activity_image(writer):
+    g, calls = writer
+    assert g.delete_activity_image(987654, IMAGE_ID) is None
+    assert calls[-1][:2] == (
+        "DELETE",
+        f"/activity-service/activity/987654/image/{IMAGE_ID}",
+    )
+
+
+@pytest.mark.parametrize("image_id", ["", "abc", "../x", f"{IMAGE_ID}/x", None])
+def test_delete_activity_image_rejects_bad_image_id(writer, image_id):
+    g, calls = writer
+    with pytest.raises(ValueError):
+        g.delete_activity_image(987654, image_id)
+    assert calls == []
+
+
+def test_set_sleep_window_dst_edge_cases(writer, monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    g, calls = writer
+    ny = ZoneInfo("America/New_York")
+    monkeypatch.setattr(g, "connectapi", lambda path, **kw: {"id": 1})
+    # 02:30 does not exist on 2026-03-08 (clocks jump 02:00 -> 03:00).
+    with pytest.raises(ValueError, match="DST gap"):
+        g.set_sleep_window(
+            "2026-03-08",
+            datetime(2026, 3, 7, 23, 0, tzinfo=ny),
+            datetime(2026, 3, 8, 2, 30, tzinfo=ny),
+        )
+    # 01:15 fold=1 (06:15 UTC) is after 01:45 fold=0 (05:45 UTC) in the
+    # repeated hour on 2026-11-01: a reversed window despite the wall times.
+    with pytest.raises(ValueError, match="after sleep_start"):
+        g.set_sleep_window(
+            "2026-11-01",
+            datetime(2026, 11, 1, 1, 15, fold=1, tzinfo=ny),
+            datetime(2026, 11, 1, 1, 45, fold=0, tzinfo=ny),
+        )
+    assert calls == []
+    # The other way round is a valid 90-minute window across the change.
+    g.set_sleep_window(
+        "2026-11-01",
+        datetime(2026, 11, 1, 1, 15, fold=0, tzinfo=ny),
+        datetime(2026, 11, 1, 1, 45, fold=1, tzinfo=ny),
+    )
+    sent = calls[-1][2]["json"]
+    assert sent["sleepEndTimestampGMT"] - sent["sleepStartTimestampGMT"] == 90 * 60000
 
 
 def test_set_activity_dogs_partial_put(writer):

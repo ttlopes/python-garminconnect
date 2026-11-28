@@ -262,6 +262,10 @@ menu_categories = {
                 "key": "get_week_average_resting_hr",
             },
             "k": {"desc": "Fitness age details (v2)", "key": "get_fitness_age_details"},
+            "l": {
+                "desc": "Change sleep start and end of a night (interactive)",
+                "key": "set_sleep_window",
+            },
         },
     },
     "3": {
@@ -615,6 +619,14 @@ menu_categories = {
                 "desc": "Upload typed swimming workout with CSS offset targets (sample)",
                 "key": "upload_swimming_css_workout",
             },
+            "E": {
+                "desc": "Add a photo to an activity (interactive)",
+                "key": "upload_activity_image",
+            },
+            "F": {
+                "desc": "Remove a photo from an activity (interactive)",
+                "key": "delete_activity_image",
+            },
         },
     },
     "6": {
@@ -734,6 +746,10 @@ menu_categories = {
             "c": {
                 "desc": "Set primary training device (interactive)",
                 "key": "set_primary_training_device",
+            },
+            "d": {
+                "desc": "Set primary wearable (interactive)",
+                "key": "set_primary_activity_tracker",
             },
         },
     },
@@ -2600,16 +2616,7 @@ def get_single_activity_data(api: Garmin) -> None:
 def get_activity_images_data(api: Garmin) -> None:
     """Get photos attached to an activity (defaults to the most recent one)."""
     try:
-        # The latest activity is only a convenience default; if looking it
-        # up fails, still let the user type an ID they know has photos.
-        default_id = ""
-        try:
-            last = api.get_last_activity()
-            default_id = str(last["activityId"]) if last else ""
-        except Exception as e:
-            print(f"⚠️ Could not look up the most recent activity: {e}")
-        prompt = f"Activity ID [{default_id}]: " if default_id else "Activity ID: "
-        activity_id = input(prompt).strip() or default_id
+        activity_id = _prompt_activity_id(api)
         if not activity_id:
             print("ℹ️ No activity ID given")
             return
@@ -2626,6 +2633,83 @@ def get_activity_images_data(api: Garmin) -> None:
             print("ℹ️ Photo URLs are presigned and expire after 24 hours")
     except Exception as e:
         print(f"❌ Error getting activity images: {e}")
+
+
+def _prompt_activity_id(api: Garmin) -> str:
+    """Ask for an activity ID, offering the most recent activity as the default.
+
+    The latest activity is only a convenience default; if looking it up fails,
+    the user can still type an ID they know.
+    """
+    default_id = ""
+    try:
+        last = api.get_last_activity()
+        default_id = str(last["activityId"]) if last else ""
+    except Exception as e:
+        print(f"⚠️ Could not look up the most recent activity: {e}")
+    prompt = f"Activity ID [{default_id}]: " if default_id else "Activity ID: "
+    return input(prompt).strip() or default_id
+
+
+def upload_activity_image_data(api: Garmin) -> None:
+    """Add a JPEG or PNG photo to an activity (defaults to the most recent one)."""
+    try:
+        activity_id = _prompt_activity_id(api)
+        if not activity_id:
+            print("ℹ️ No activity ID given")
+            return
+        image_path = input("Image file (.jpg, .jpeg or .png): ").strip()
+        if not image_path:
+            print("ℹ️ No image file given")
+            return
+        success, image = call_and_display(
+            api.upload_activity_image,
+            activity_id,
+            image_path,
+            method_name="upload_activity_image",
+            api_call_desc=f"api.upload_activity_image({activity_id}, {image_path!r})",
+        )
+        if success and isinstance(image, dict) and image.get("imageId"):
+            print(f"ℹ️ Remove it again with option F and image ID {image['imageId']}")
+    except Exception as e:
+        print(f"❌ Error adding activity image: {e}")
+
+
+def delete_activity_image_data(api: Garmin) -> None:
+    """Remove one photo from an activity, picked from its current photos."""
+    try:
+        activity_id = _prompt_activity_id(api)
+        if not activity_id:
+            print("ℹ️ No activity ID given")
+            return
+        images = api.get_activity_images(activity_id)
+        if not images:
+            print("ℹ️ No photos attached to this activity")
+            return
+        print("\nPhotos on this activity:")
+        for i, image in enumerate(images):
+            print(f"{i}: {image.get('imageId')}")
+        choice = input("Enter photo index to remove (or 'q' to cancel): ").strip()
+        if choice.lower() == "q" or not choice.isdigit():
+            print("❌ Cancelled")
+            return
+        index = int(choice)
+        if not 0 <= index < len(images):
+            print("❌ Invalid index")
+            return
+        image_id = images[index]["imageId"]
+        if input(f"Remove photo {image_id}? (yes/no): ").strip().lower() != "yes":
+            print("❌ Cancelled")
+            return
+        call_and_display(
+            api.delete_activity_image,
+            activity_id,
+            image_id,
+            method_name="delete_activity_image",
+            api_call_desc=f"api.delete_activity_image({activity_id}, {image_id!r})",
+        )
+    except Exception as e:
+        print(f"❌ Error removing activity image: {e}")
 
 
 def get_activity_exercise_sets_data(api: Garmin) -> None:
@@ -5514,6 +5598,70 @@ def set_daily_goal_data(api: Garmin) -> None:
         print(f"❌ Error setting goal: {e}")
 
 
+def set_sleep_window_data(api: Garmin) -> None:
+    """Change when a night's sleep started and ended."""
+    try:
+        cdate = input(f"Sleep date, the day you woke up (default {_today()}): ")
+        cdate = cdate.strip() or _today()
+        dto = (api.get_daily_sleep(cdate) or {}).get("dailySleepDTO") or {}
+        tz = api.now().tzinfo
+        current = {}
+        for side in ("Start", "End"):
+            ms = dto.get(f"sleep{side}TimestampGMT")
+            if ms:
+                current[side] = datetime.datetime.fromtimestamp(ms / 1000, tz)
+        if len(current) < 2:
+            print(f"❌ No sleep recorded for {cdate}")
+            return
+        print(
+            f"Times are in {tz}. Current window: {current['Start']} - {current['End']}"
+        )
+        new = {}
+        for side in ("Start", "End"):
+            value = input(
+                f"New sleep {side.lower()} (YYYY-MM-DD HH:MM[+HH:MM], Enter to keep): "
+            ).strip()
+            if not value:
+                new[side] = current[side]
+                continue
+            parsed = datetime.datetime.fromisoformat(value)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=tz)
+                # A wall time skipped when clocks go forward has no instant.
+                round_trip = parsed.astimezone(datetime.UTC).astimezone(tz)
+                if round_trip.replace(tzinfo=None) != parsed.replace(tzinfo=None):
+                    print(f"❌ {value} does not exist in {tz} (clocks skip it)")
+                    return
+                # In the hour repeated when clocks go back, the wall time
+                # alone does not say which of the two instants is meant.
+                if parsed.utcoffset() != parsed.replace(fold=1).utcoffset():
+                    print(
+                        f"❌ {value} occurs twice in {tz}; add the UTC offset, "
+                        "e.g. 2026-11-01 01:30-04:00"
+                    )
+                    return
+            new[side] = parsed
+        # Compare instants: wall-time comparison ignores fold in a repeated hour.
+        if all(
+            new[side].astimezone(datetime.UTC) == current[side].astimezone(datetime.UTC)
+            for side in ("Start", "End")
+        ):
+            print("Cancelled")
+            return
+        call_and_display(
+            api.set_sleep_window,
+            cdate,
+            new["Start"],
+            new["End"],
+            method_name="set_sleep_window",
+            api_call_desc=(
+                f"api.set_sleep_window('{cdate}', {new['Start']!r}, {new['End']!r})"
+            ),
+        )
+    except Exception as e:
+        print(f"❌ Error changing sleep window: {e}")
+
+
 def calendar_note_data(api: Garmin) -> None:
     """Add a calendar note for today and optionally delete it again."""
     try:
@@ -5586,6 +5734,26 @@ def set_primary_training_device_data(api: Garmin) -> None:
         )
     except Exception as e:
         print(f"❌ Error setting primary training device: {e}")
+
+
+def set_primary_activity_tracker_data(api: Garmin) -> None:
+    """Choose the primary wearable (source of steps, stress and sleep)."""
+    try:
+        device = _pick(
+            api.get_devices(),
+            "device",
+            lambda d: f"{d.get('productDisplayName')} (id {d.get('deviceId')})",
+        )
+        if not device:
+            return
+        call_and_display(
+            api.set_primary_activity_tracker,
+            device["deviceId"],
+            method_name="set_primary_activity_tracker",
+            api_call_desc=f"api.set_primary_activity_tracker({device['deviceId']})",
+        )
+    except Exception as e:
+        print(f"❌ Error setting primary wearable: {e}")
 
 
 def update_activity_name_data(api: Garmin) -> None:
@@ -5949,6 +6117,8 @@ def execute_api_call(api: Garmin, key: str) -> None:
             "get_activity_gear": lambda: get_activity_gear_data(api),
             "get_activity": lambda: get_single_activity_data(api),
             "get_activity_images": lambda: get_activity_images_data(api),
+            "upload_activity_image": lambda: upload_activity_image_data(api),
+            "delete_activity_image": lambda: delete_activity_image_data(api),
             "get_activity_exercise_sets": lambda: get_activity_exercise_sets_data(api),
             "get_workout_by_id": lambda: get_workout_by_id_data(api),
             "download_workout": lambda: download_workout_data(api),
@@ -6254,9 +6424,13 @@ def execute_api_call(api: Garmin, key: str) -> None:
             "delete_gear": lambda: delete_gear_data(api),
             "set_steps_goal": lambda: set_steps_goal_data(api),
             "set_daily_goal": lambda: set_daily_goal_data(api),
+            "set_sleep_window": lambda: set_sleep_window_data(api),
             "calendar_note": lambda: calendar_note_data(api),
             "update_blood_pressure": lambda: update_blood_pressure_note_data(api),
             "set_primary_training_device": lambda: set_primary_training_device_data(
+                api
+            ),
+            "set_primary_activity_tracker": lambda: set_primary_activity_tracker_data(
                 api
             ),
             "update_activity": lambda: update_activity_name_data(api),

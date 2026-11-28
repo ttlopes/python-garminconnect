@@ -111,6 +111,7 @@ Not added: `/metrics-service/metrics/eventracetimeprojections/{eventId}/{d1}/{d2
 | `get_weekly_activity_stats(start, end, group_by_activity_type=True)` | `GET /userstats-service/activities/weekly/{displayName}?fromWeekStartDate&untilWeekStartDate&grpActType` | | yes |
 | `get_user_statistics()` | `GET /userstats-service/statistics/{displayName}` | Totals per activity type. | yes |
 | `get_daily_sleep(cdate=None, non_sleep_buffer_minutes=60)` | `GET /sleep-service/sleep/dailySleepData?date[&nonSleepBufferMinutes]` | The Sleep page's current call; `get_sleep_data` keeps the wellness-service variant. | yes |
+| `set_sleep_window(cdate, sleep_start, sleep_end)` | `GET /sleep-service/sleep/dailySleep?date`, then `PUT /sleep-service/sleep/dailySleep/{id}` with the whole record | The web app's "Edit sleep" dialog. Only the four start/end timestamps change (`…GMT` in UTC milliseconds, `…Local` as the wall-clock time encoded as UTC); URL and method from the web app's code; the record is sent back with the four timestamps replaced. Garmin answers 200 with a JSON body and recalculates the night. Returns the record read back. | yes (end time moved with the same request; this method verified writing an unchanged window) |
 | `get_naps(cdate=None, include_overlaps=True)` | `GET /sleep-service/sleep/naps/{date}?includeOverlaps` | | yes (empty) |
 | `get_sleep_stats_weekly(end=None, weeks=52)` | `GET /sleep-service/stats/sleep/weekly/{end}/{weeks}` | | yes |
 | `get_sleep_stats_overall(start, end)` | `GET /sleep-service/stats/sleep/overall/{start}/{end}` | | yes |
@@ -188,6 +189,7 @@ feature get a 404.
 | `get_usage_indicators()` | `GET /web-gateway/snapshot/usageIndicators` | Which features the account's devices support. | yes |
 | `update_user_settings(settings)` | `PUT /userprofile-service/userprofile/user-settings/` with the settings object | Overlaid on `get_user_profile()`; `userData` merged one level deep. | yes (unchanged object) |
 | `set_primary_training_device(device_id)` | `PUT /userprofile-service/userprofile/user-settings/primary-training-device` `{"deviceId"}` | | yes |
+| `set_primary_activity_tracker(device_id)` | `PUT /device-service/deviceservice/device-info/{deviceId}/primary-activity-tracker` (no body needed) | The web app's "Primary Wearable": source of steps, stress and sleep. Independent of the primary training device. Read back with `get_primary_training_device()` (`primaryWearableDevice`). | yes |
 | `get_jetlag_status(cdate=None)` | `GET /jetlag-service/jetlag/status/daily/{date}` | Empty without a trip. | yes (empty) |
 
 ## Activities (`activitylist-service`, `activity-service`, `segment-service`)
@@ -199,6 +201,8 @@ feature get a 404.
 | `get_favorite_activities(limit=5)` | `GET /activitylist-service/activities/favorite/{displayName}?limit` | | yes (empty) |
 | `set_activity_favorite(activity_id, favorite=True)` | `PUT /activity-service/activity/{id}` `{"activityId", "metadataDTO": {"favorite"}}` | Same partial update as `set_activity_name`. Read back via `metadataDTO.favorite` and `get_favorite_activities()`. | yes |
 | `update_activity(activity_id, fields)` | `PUT /activity-service/activity/{id}` `{"activityId", **fields}` | Generic partial update (`activityName`, `description`, `activityTypeDTO`, `eventTypeDTO`, `metadataDTO`, `accessControlRuleDTO`). | yes |
+| `upload_activity_image(activity_id, image_path)` | `POST /activity-service/activity/{id}/image` (multipart, field `file`) | JPEG or PNG. Returns `imageId` plus presigned `url`/`smallUrl`/`mediumUrl` (24 h). Read back via `get_activity_images()`. | yes |
+| `delete_activity_image(activity_id, image_id)` | `DELETE /activity-service/activity/{id}/image/{imageId}` | HTTP 204. `imageId` is a 32-hex-digit id. | yes |
 | `get_activity_laps(activity_id)` | `GET /activity-service/activity/{id}/laps` | `lapDTOs`. | yes |
 | `get_activity_rounds(activity_id)` | `GET /activity-service/activity/{id}/rounds` | HIIT/boxing rounds with sets. | yes (empty) |
 | `get_activity_step_details(activity_id)` | `GET /activity-service/activity/{id}/stepdetails` | Structured-workout steps. | yes (empty) |
