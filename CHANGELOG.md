@@ -9,6 +9,10 @@ page.
 
 ## [Unreleased]
 
+### Added
+
+- **Photos can be added to and removed from an activity**: new `upload_activity_image(activity_id, image_path)` adds a JPEG or PNG the way the Garmin Connect web app does (a multipart `POST` to `activity-service/activity/{id}/image`) and returns the new image, including its `imageId`; `delete_activity_image(activity_id, image_id)` removes one (`DELETE …/image/{imageId}`). Until now photos could only be read with `get_activity_images()`. Both are in `demo.py` (Activities & Workouts, options E and F).
+
 ### Fixed
 
 - **A network or server error while loading the profile no longer looks like a rejected token**: `login()` reported any failure to fetch the social profile or user settings as `GarminConnectAuthenticationError`, including SSL errors, timeouts, DNS failures and Garmin 5xx responses. Callers could not tell "retry later" from "log in again", and with saved tokens plus a username and password, the stale-token fallback threw away working tokens and ran a full credential login (with possible MFA prompts and rate limits). Only a 401/403 or invalid profile data is now an authentication error; a 429 raises `GarminConnectTooManyRequestsError` and other failures raise `GarminConnectConnectionError`. (#486)
