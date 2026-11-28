@@ -11,6 +11,8 @@ page.
 
 ### Added
 
+- **The primary wearable can be set**: new `set_primary_activity_tracker(device_id)` chooses the device Garmin uses for daily health metrics such as steps, stress and sleep (the web app's "Primary Wearable"), next to the existing `set_primary_training_device()`. It sends the request the web app's Device Priority page sends, a `PUT` to `device-service/deviceservice/device-info/{id}/primary-activity-tracker`; the device ID is in the URL and no body is needed. Tested live by switching the primary wearable from one device to another and back: Garmin answers 204, `get_primary_training_device()` shows the new device with `primaryWearableDevice: true`, and the primary training device stays unchanged. The two roles are independent: `set_primary_training_device()` alone leaves the primary wearable where it was. (#483)
+
 - **Photos can be added to and removed from an activity**: new `upload_activity_image(activity_id, image_path)` adds a JPEG or PNG the way the Garmin Connect web app does (a multipart `POST` to `activity-service/activity/{id}/image`) and returns the new image, including its `imageId`; `delete_activity_image(activity_id, image_id)` removes one (`DELETE …/image/{imageId}`). Until now photos could only be read with `get_activity_images()`. Both are in `demo.py` (Activities & Workouts, options E and F).
 
 ### Fixed
