@@ -7,6 +7,12 @@ Numbers in parentheses refer to GitHub issues and pull requests. Releases before
 0.3.10 are described on the [GitHub Releases](https://github.com/cyberjunky/python-garminconnect/releases)
 page.
 
+## [Unreleased]
+
+### Fixed
+
+- **A network or server error while loading the profile no longer looks like a rejected token**: `login()` reported any failure to fetch the social profile or user settings as `GarminConnectAuthenticationError`, including SSL errors, timeouts, DNS failures and Garmin 5xx responses. Callers could not tell "retry later" from "log in again", and with saved tokens plus a username and password, the stale-token fallback threw away working tokens and ran a full credential login (with possible MFA prompts and rate limits). Only a 401/403 or invalid profile data is now an authentication error; a 429 raises `GarminConnectTooManyRequestsError` and other failures raise `GarminConnectConnectionError`. (#486)
+
 ## [0.3.20] - 2026-10-23
 
 ### Added

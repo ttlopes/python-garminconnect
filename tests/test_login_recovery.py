@@ -10,6 +10,7 @@ import os
 from unittest.mock import patch
 
 import pytest
+import requests
 
 import garminconnect
 from garminconnect import client as client_mod
@@ -242,7 +243,9 @@ def test_login_refuses_auth_state_injection_via_symlink(tmp_path, make_symlink):
 def test_load_reads_regular_file(tmp_path):
     """A normal token file should load cleanly."""
     tokenfile = tmp_path / "garmin_tokens.json"
-    tokenfile.write_text('{"di_token": "t", "di_refresh_token": "r", "di_client_id": "c"}')
+    tokenfile.write_text(
+        '{"di_token": "t", "di_refresh_token": "r", "di_client_id": "c"}'
+    )
 
     c = client_mod.Client(verify_login=False)
     c.load(str(tokenfile))
@@ -303,3 +306,144 @@ def test_poisoned_cached_tokens_trigger_fresh_login():
 
         chain.assert_called_once()  # fresh strategy chain was run
         assert load_calls["n"] == 2  # retried profile after re-login
+
+
+# ----- profile-load error classification -----
+#
+# A network failure or server error while loading the profile must not look
+# like a rejected token: login() treats an auth error on cached tokens as a
+# poisoned cache and runs a full credential login.
+
+
+def _api_error(status):
+    from unittest.mock import Mock
+
+    err = GarminConnectConnectionError(f"API Error {status}")
+    err.response = Mock(status_code=status)
+    return err
+
+
+_PROFILE = {"displayName": "user", "fullName": "U", "profileId": 1}
+_SETTINGS = {"userData": {"measurementSystem": "metric"}}
+
+
+@pytest.fixture
+def no_sleep():
+    with patch("garminconnect.api.base.time.sleep"):
+        yield
+
+
+@pytest.mark.parametrize(
+    "make_exc",
+    [
+        pytest.param(lambda: requests.exceptions.SSLError("EOF"), id="ssl"),
+        pytest.param(lambda: requests.exceptions.ConnectionError("down"), id="conn"),
+        pytest.param(lambda: requests.exceptions.Timeout("slow"), id="timeout"),
+        pytest.param(lambda: _api_error(503), id="503"),
+    ],
+)
+def test_social_profile_transient_error_is_connection_error(no_sleep, make_exc):
+    g = garminconnect.Garmin()
+    errors = [make_exc() for _ in range(3)]
+    with (
+        patch.object(g.client, "connectapi", side_effect=errors) as api,
+        pytest.raises(GarminConnectConnectionError) as info,
+    ):
+        g._load_social_profile()
+    assert api.call_count == 3  # transient errors are retried
+    assert not isinstance(info.value, GarminConnectAuthenticationError)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_social_profile_rejected_token_is_auth_error(no_sleep, status):
+    g = garminconnect.Garmin()
+    with (
+        patch.object(g.client, "connectapi", side_effect=_api_error(status)) as api,
+        pytest.raises(GarminConnectAuthenticationError),
+    ):
+        g._load_social_profile()
+    assert api.call_count == 1  # a definitive rejection is not retried
+
+
+def test_social_profile_429_is_rate_limit(no_sleep):
+    from garminconnect.exceptions import GarminConnectTooManyRequestsError
+
+    g = garminconnect.Garmin()
+    with (
+        patch.object(g.client, "connectapi", side_effect=_api_error(429)) as api,
+        pytest.raises(GarminConnectTooManyRequestsError),
+    ):
+        g._load_social_profile()
+    assert api.call_count == 1
+
+
+def test_social_profile_recovers_after_transient_error(no_sleep):
+    g = garminconnect.Garmin()
+    with patch.object(
+        g.client,
+        "connectapi",
+        side_effect=[requests.exceptions.SSLError("EOF"), _PROFILE],
+    ):
+        g._load_social_profile()
+    assert g.display_name == "user"
+
+
+def test_user_settings_network_error_is_connection_error(no_sleep):
+    g = garminconnect.Garmin()
+    err = requests.exceptions.ConnectionError("refused")
+    with (
+        patch.object(g.client, "connectapi", side_effect=[_PROFILE, err, err, err]),
+        pytest.raises(GarminConnectConnectionError) as info,
+    ):
+        g._load_profile_and_settings()
+    assert not isinstance(info.value, GarminConnectAuthenticationError)
+
+
+def test_user_settings_rejected_token_is_auth_error(no_sleep):
+    g = garminconnect.Garmin()
+    with (
+        patch.object(g.client, "connectapi", side_effect=[_PROFILE, _api_error(401)]),
+        pytest.raises(GarminConnectAuthenticationError),
+    ):
+        g._load_profile_and_settings()
+
+
+def test_login_network_error_keeps_cached_tokens(no_sleep, tmp_path):
+    """With cached tokens and credentials, a network outage while loading the
+    profile must surface as a connection error, not trigger a fresh login.
+    """
+    g = garminconnect.Garmin("e@x.com", "pw")
+    with (
+        patch.object(g.client, "load"),
+        patch.object(g.client, "_token_expires_soon", return_value=False),
+        patch.object(
+            g.client,
+            "connectapi",
+            side_effect=requests.exceptions.SSLError("EOF"),
+        ),
+        patch.object(g.client, "login", return_value=(None, None)) as chain,
+        patch.object(g.client, "_clear_auth_state") as clear,
+        pytest.raises(GarminConnectConnectionError),
+    ):
+        g.login(str(tmp_path / "tokens"))
+    chain.assert_not_called()
+    clear.assert_not_called()
+
+
+def test_login_rejected_token_still_triggers_fresh_login(no_sleep, tmp_path):
+    """A real 401 on the cached token keeps the poisoned-cache fallback."""
+    g = garminconnect.Garmin("e@x.com", "pw")
+    with (
+        patch.object(g.client, "load"),
+        patch.object(g.client, "_token_expires_soon", return_value=False),
+        patch.object(
+            g.client,
+            "connectapi",
+            side_effect=[_api_error(401), _PROFILE, _SETTINGS],
+        ),
+        patch.object(g.client, "login", return_value=(None, None)) as chain,
+        patch.object(g.client, "dump"),
+    ):
+        g.login(str(tmp_path / "tokens"))
+    chain.assert_called_once()
+    assert g.display_name == "user"
