@@ -5370,15 +5370,28 @@ def set_sleep_window_data(api: Garmin) -> None:
         new = {}
         for side in ("Start", "End"):
             value = input(
-                f"New sleep {side.lower()} (YYYY-MM-DD HH:MM, Enter to keep): "
-            )
-            value = value.strip()
-            new[side] = (
-                datetime.datetime.strptime(value, "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                if value
-                else current[side]
-            )
-        if new == current:
+                f"New sleep {side.lower()} (YYYY-MM-DD HH:MM[+HH:MM], Enter to keep): "
+            ).strip()
+            if not value:
+                new[side] = current[side]
+                continue
+            parsed = datetime.datetime.fromisoformat(value)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=tz)
+                # In the hour repeated when clocks go back, the wall time
+                # alone does not say which of the two instants is meant.
+                if parsed.utcoffset() != parsed.replace(fold=1).utcoffset():
+                    print(
+                        f"❌ {value} occurs twice in {tz}; add the UTC offset, "
+                        "e.g. 2026-11-01 01:30-04:00"
+                    )
+                    return
+            new[side] = parsed
+        # Compare instants: wall-time comparison ignores fold in a repeated hour.
+        if all(
+            new[side].astimezone(datetime.UTC) == current[side].astimezone(datetime.UTC)
+            for side in ("Start", "End")
+        ):
             print("Cancelled")
             return
         call_and_display(
